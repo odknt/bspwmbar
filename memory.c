@@ -17,7 +17,7 @@ int
 mem_perc()
 {
 	static time_t prevtime = { 0 };
-	static MemInfo a       = { 0 };
+	static MemInfo a = { 0 };
 	FILE *fp;
 
 	time_t curtime = time(NULL);

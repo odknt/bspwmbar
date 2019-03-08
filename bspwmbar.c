@@ -135,7 +135,7 @@ barwindow_init(Display *dpy, int scr, int x, int y, int width, int height,
 
 	wattrs.override_redirect = 1;
 	wattrs.background_pixmap = xw->pixmap;
-	wattrs.event_mask        = ExposureMask;
+	wattrs.event_mask = NoEventMask;
 
 	xw->win = XCreateWindow(dpy, RootWindow(dpy, scr), x, y, width, height, 0,
 	                        DefaultDepth(dpy, scr), CopyFromParent,
@@ -146,15 +146,15 @@ barwindow_init(Display *dpy, int scr, int x, int y, int width, int height,
 	xw->draw = XftDrawCreate(dpy, xw->win, DefaultVisual(dpy, scr),
 	                         DefaultColormap(dpy, scr));
 
-	hint            = XAllocClassHint();
+	hint = XAllocClassHint();
 	hint->res_class = "Bspwmbar";
-	hint->res_name  = "Bspwmbar";
+	hint->res_name = "Bspwmbar";
 	XSetClassHint(dpy, xw->win, hint);
 	XFree(hint);
 
-	xw->x      = x;
-	xw->y      = y;
-	xw->width  = width;
+	xw->x = x;
+	xw->y = y;
+	xw->width = width;
 	xw->height = height;
 }
 
@@ -232,8 +232,8 @@ bspwmbar_drawstring(Bspwmbar *bar, XftDraw *draw, XftColor *color,
                     const char *str, int x)
 {
 	XGlyphInfo extents = { 0 };
-	long rune          = 0;
-	int width          = 0;
+	long rune = 0;
+	int width = 0;
 	for (unsigned int i = 0; i < strlen(str);) {
 		int len = utf8decode(&str[i], &rune, UTF_SZ);
 		for (int j = 0; j < bar->nfont; j++) {
@@ -256,8 +256,8 @@ bspwmbar_drawfontstring(Bspwmbar *bar, XftDraw *draw, int fno, XftColor *color,
                         const char *str, int x)
 {
 	XGlyphInfo extents = { 0 };
-	long rune          = 0;
-	int width          = 0;
+	long rune = 0;
+	int width = 0;
 	for (unsigned int i = 0; i < strlen(str);) {
 		int len = utf8decode(&str[i], &rune, UTF_SZ);
 		XftTextExtentsUtf8(bar->dpy, bar->fonts[fno], (FcChar8 *)&str[i], len,
@@ -277,7 +277,7 @@ bspwmbar_drawcpu(Bspwmbar *bar, XftDraw *draw, CoreInfo *a, int nproc, int x)
 	XGlyphInfo extents;
 	int pos = x - bspwmbar_getdrawwidth(bar, "▁", &extents);
 	for (int i = nproc - 1; i >= 0; i--) {
-		int avg     = (int)a[i].loadavg;
+		int avg = (int)a[i].loadavg;
 		XftColor fg = xftcols[4];
 		if (avg < 10) {
 			ramp = "▁";
@@ -285,22 +285,22 @@ bspwmbar_drawcpu(Bspwmbar *bar, XftDraw *draw, CoreInfo *a, int nproc, int x)
 			ramp = "▂";
 		} else if (avg < 50) {
 			ramp = "▃";
-			fg   = xftcols[5];
+			fg = xftcols[5];
 		} else if (avg < 60) {
 			ramp = "▄";
-			fg   = xftcols[5];
+			fg = xftcols[5];
 		} else if (avg < 70) {
 			ramp = "▅";
-			fg   = xftcols[6];
+			fg = xftcols[6];
 		} else if (avg < 80) {
 			ramp = "▆";
-			fg   = xftcols[6];
+			fg = xftcols[6];
 		} else if (avg < 90) {
 			ramp = "▇";
-			fg   = xftcols[7];
+			fg = xftcols[7];
 		} else {
 			ramp = "█";
-			fg   = xftcols[7];
+			fg = xftcols[7];
 		}
 		bspwmbar_drawfontstring(bar, draw, CPUFONT, &xftcols[ALTFGCOLOR], "█",
 		                        pos);
@@ -352,7 +352,7 @@ bspwmbar_parse(Bspwmbar *bar, char *report)
 				name_len = SMALLER(j - i, NAME_MAXSZ - 1);
 				strncpy(name, &report[i], name_len);
 				name[name_len] = '\0';
-				i              = j;
+				i = j;
 				for (j = 0; j < bar->nxbar; j++)
 					if (!strncmp(bar->xbars[j].monitor.name, name,
 					             strlen(name)))
@@ -389,8 +389,8 @@ void
 bspwmbar_render(Bspwmbar *bar)
 {
 	XftColor col;
-	XftColor fg        = xftcols[FGCOLOR];
-	XftColor altfg     = xftcols[ALTFGCOLOR];
+	XftColor fg = xftcols[FGCOLOR];
+	XftColor altfg = xftcols[ALTFGCOLOR];
 	XGlyphInfo extents = { 0 };
 
 	time_t t = time(NULL);
@@ -403,11 +403,11 @@ bspwmbar_render(Bspwmbar *bar)
 	/* padding width */
 	int pad = bspwmbar_getdrawwidth(bar, "a", &extents);
 
-	Window win        = get_active_window(bar->dpy, bar->scr);
-	char *title       = NULL;
+	Window win = get_active_window(bar->dpy, bar->scr);
+	char *title = NULL;
 	Bool title_suffix = 0;
 	if (win) {
-		title      = (char *)get_window_title(bar->dpy, win);
+		title = (char *)get_window_title(bar->dpy, win);
 		size_t idx = utf8npos(title, TITLE_MAXSZ, strlen(title));
 		if (idx < strlen(title))
 			title_suffix = 1;
@@ -416,20 +416,20 @@ bspwmbar_render(Bspwmbar *bar)
 
 	CoreInfo *cores;
 	int ncore = cpu_perc(&cores);
-	int mem   = mem_perc();
-	int disk  = disk_perc();
+	int mem = mem_perc();
+	int disk = disk_perc();
 
-	AlsaInfo alsa    = alsa_info();
+	AlsaInfo alsa = alsa_info();
 	const char *mark = (alsa.unmuted) ? "墳" : "婢";
 
 	for (int i = 0; i < bar->nxbar; i++) {
 		BarWindow *xw = &bar->xbars[i];
-		int x         = 0, width;
+		int x = 0, width;
 
 		XClearWindow(bar->dpy, xw->win);
 
 		/* render logo */
-		x     = pad * 2;
+		x = pad * 2;
 		width = bspwmbar_drawstring(bar, xw->draw, &xftcols[LOGOCOLOR], "", x);
 		x += width + pad;
 
@@ -525,7 +525,7 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 	XRRScreenResources *xrr_res;
 	XRRMonitorInfo *xrr_mon;
 	XRROutputInfo *xrr_out;
-	XGCValues gcv      = { 0 };
+	XGCValues gcv = { 0 };
 	XGlyphInfo extents = { 0 };
 	int i, j, nmon;
 
@@ -534,7 +534,7 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 		die("bspwm_connect(): Failed to connect to the socket\n");
 
 	/* get monitors */
-	xrr_mon    = XRRGetMonitors(dpy, RootWindow(dpy, DefaultScreen(dpy)), 1,
+	xrr_mon = XRRGetMonitors(dpy, RootWindow(dpy, DefaultScreen(dpy)), 1,
                              &nmon);
 	bar->xbars = (BarWindow *)malloc(sizeof(BarWindow) * nmon);
 	bar->nxbar = nmon;
@@ -558,8 +558,8 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 	XRRFreeMonitors(xrr_mon);
 
 	/* initialize */
-	bar->dpy   = dpy;
-	bar->scr   = scr;
+	bar->dpy = dpy;
+	bar->scr = scr;
 	bar->nfont = 0;
 
 	bspwmbar_loadfonts(bar, font_names, LENGTH(font_names));
@@ -575,8 +575,8 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 		               bar->xbars[i].width, bar->xbars[i].height);
 
 		XMapWindow(dpy, bar->xbars[i].win);
-		XSync(dpy, False);
 	}
+	XFlush(dpy);
 
 	return 0;
 }
@@ -639,14 +639,14 @@ main(int argc, char *argv[])
 	if ((epfd = epoll_create1(0)) == -1)
 		die("epoll_create1(): Failed to create epoll fd\n");
 
-	ev.events  = EPOLLIN;
+	ev.events = EPOLLIN;
 	ev.data.fd = bar.fd;
 	if (epoll_ctl(epfd, EPOLL_CTL_ADD, bar.fd, &ev) == -1)
 		die("epoll_ctl(): Failed to add to epoll fd\n");
 
 	/* polling X11 event */
-	xfd         = ConnectionNumber(bar.dpy);
-	xev.events  = EPOLLIN;
+	xfd = ConnectionNumber(bar.dpy);
+	xev.events = EPOLLIN;
 	xev.data.fd = xfd;
 	if (epoll_ctl(epfd, EPOLL_CTL_ADD, xfd, &xev) == -1)
 		die("epoll_ctl(): Failed to add to epoll xfd\n");
@@ -656,12 +656,14 @@ main(int argc, char *argv[])
 	XSetWindowAttributes attrs;
 	attrs.event_mask = PropertyChangeMask;
 
-	int afd     = alsa_connect();
-	aev.events  = EPOLLIN;
+	int afd = alsa_connect();
+	aev.events = EPOLLIN;
 	aev.data.fd = afd;
 
 	if (epoll_ctl(epfd, EPOLL_CTL_ADD, afd, &aev) == -1)
 		die("epoll_ctl(): Failed to add to epoll afd\n");
+
+	Atom filter = XInternAtom(dpy, "_NET_WM_NAME", 1);
 
 	/* main loop */
 	while ((nfd = epoll_wait(epfd, events, MAX_EVENTS, 1000)) != -1) {
@@ -682,8 +684,16 @@ main(int argc, char *argv[])
 				}
 			} else if (events[i].data.fd == xfd) {
 				/* for X11 events */
-				while (XPending(bar.dpy))
+				while (XPending(bar.dpy)) {
 					XNextEvent(bar.dpy, &event);
+					switch (event.type) {
+					case PropertyNotify:
+						if (event.xproperty.atom != filter)
+							continue;
+						break;
+					}
+				}
+				continue;
 			} else if (events[i].data.fd == afd) {
 				if (!alsa_need_update())
 					continue;
