@@ -1,5 +1,6 @@
 #define _XOPEN_SOURCE
 #define _XOPEN_SOURCE_EXTENDED
+#define _POSIX_C_SOURCE 199309L
 
 #include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
@@ -11,6 +12,7 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <sys/timerfd.h>
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
@@ -394,11 +396,8 @@ bspwmbar_render(Bspwmbar *bar)
 	XGlyphInfo extents = { 0 };
 
 	time_t t = time(NULL);
-	uintmax_t temp;
-	Bool temp_loaded;
 
-	if (thermal_found && pscanf(THERMAL_PATH, "%ju", &temp) != -1)
-		temp_loaded = 1;
+	int temp = thermal_val(THERMAL_PATH);
 
 	/* padding width */
 	int pad = bspwmbar_getdrawwidth(bar, "a", &extents);
@@ -460,8 +459,8 @@ bspwmbar_render(Bspwmbar *bar)
 		}
 
 		/* render temperature */
-		if (thermal_found && temp_loaded) {
-			sprintf(buf, " %ld℃", temp / 1000);
+		if (temp) {
+			sprintf(buf, " %d℃", temp / 1000);
 			x -= bspwmbar_getdrawwidth(bar, buf, &extents) + pad * 2;
 			bspwmbar_drawstring(bar, xw->draw, &fg, buf, x);
 		}
@@ -665,8 +664,21 @@ main(int argc, char *argv[])
 
 	Atom filter = XInternAtom(dpy, "_NET_WM_NAME", 1);
 
+	/* timerfd */
+	struct itimerspec interval = { {1, 0}, {1, 0} };
+	int tfd = timerfd_create(CLOCK_REALTIME, 0);
+	timerfd_settime(tfd, 0, &interval, NULL);
+
+	struct epoll_event tev;
+	tev.events = EPOLLIN;
+	tev.data.fd = tfd;
+
+	if (epoll_ctl(epfd, EPOLL_CTL_ADD, tfd, &tev) == -1)
+		die("epoll_ctl(): Failed to add to epoll afd\n");
+
 	/* main loop */
-	while ((nfd = epoll_wait(epfd, events, MAX_EVENTS, 1000)) != -1) {
+	while ((nfd = epoll_wait(epfd, events, MAX_EVENTS, -1)) != -1) {
+		int need_render = 0;
 		for (i = 0; i < nfd; i++) {
 			if (events[i].data.fd == bar.fd) {
 				/* for BSPWM */
@@ -681,6 +693,7 @@ main(int argc, char *argv[])
 					if ((win = get_active_window(bar.dpy, bar.scr)))
 						XChangeWindowAttributes(bar.dpy, win, CWEventMask,
 						                        &attrs);
+					need_render = 1;
 				}
 			} else if (events[i].data.fd == xfd) {
 				/* for X11 events */
@@ -688,21 +701,29 @@ main(int argc, char *argv[])
 					XNextEvent(bar.dpy, &event);
 					switch (event.type) {
 					case PropertyNotify:
-						if (event.xproperty.atom != filter)
-							continue;
+						if (event.xproperty.atom == filter)
+							need_render = 1;
 						break;
 					}
 				}
-				continue;
 			} else if (events[i].data.fd == afd) {
-				if (!alsa_need_update())
-					continue;
+				if (alsa_need_update())
+					need_render = 1;
+			} else if (events[i].data.fd == tfd) {
+				uint64_t tcnt;
+				read(tfd, &tcnt, sizeof(uint64_t));
+				need_render = 1;
 			}
 		}
-		bspwmbar_render(&bar);
+		if (need_render) {
+			/* force render after interval */
+			timerfd_settime(tfd, 0, &interval, NULL);
+			bspwmbar_render(&bar);
+		}
 	}
 CLEANUP:
 
+	close(tfd);
 	alsa_disconnect();
 	bspwmbar_destroy(&bar);
 	if (XCloseDisplay(dpy))

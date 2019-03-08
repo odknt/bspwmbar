@@ -1,6 +1,6 @@
 .POSIX:
 
-OBJ = bspwmbar.o util.o cpu.o memory.o disk.o alsa.o
+OBJ = bspwmbar.o util.o cpu.o memory.o disk.o alsa.o thermal.c
 
 include config.mk
 

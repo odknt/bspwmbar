@@ -32,6 +32,7 @@ int disk_perc();
 int alsa_connect();
 void alsa_disconnect();
 int alsa_need_update();
+int thermal_val(const char *);
 AlsaInfo alsa_info();
 
 #endif
