@@ -1,3 +1,5 @@
+/* See LICENSE file for copyright and license details. */
+
 #include <alloca.h>
 #include <alsa/asoundlib.h>
 #include <X11/Xlib.h>

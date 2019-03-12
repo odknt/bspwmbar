@@ -1,3 +1,5 @@
+/* See LICENSE file for copyright and license details. */
+
 #define _XOPEN_SOURCE
 #define _XOPEN_SOURCE_EXTENDED
 #define _POSIX_C_SOURCE 199309L

@@ -1,3 +1,5 @@
+/* See LICENSE file for copyright and license details. */
+
 #ifndef UTIL_H_
 #define BSPWMBAR_UTIL_H_
 #include <unistd.h>

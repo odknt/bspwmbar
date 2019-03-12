@@ -1,3 +1,5 @@
+/* See LICENSE file for copyright and license details. */
+
 #ifndef BSPWMBAR_CONFIG_H_
 #define BSPWMBAR_CONFIG_H_
 
