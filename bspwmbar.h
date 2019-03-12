@@ -2,6 +2,7 @@
 #define BSPWMBAR_H_
 
 #include <unistd.h>
+#include <X11/Xlib.h>
 
 typedef struct {
 	double user;
@@ -23,16 +24,23 @@ typedef struct {
 typedef struct {
 	long volume;
 	int  unmuted;
+	long max, min;
+	long oneper;
 } AlsaInfo;
 
 int cpu_perc(CoreInfo **);
 int mem_perc();
-int disk_perc();
+
+char *filesystem(const char *);
 
 int alsa_connect();
 void alsa_disconnect();
 int alsa_need_update();
-int thermal_val(const char *);
-AlsaInfo alsa_info();
+char *thermal(const char *);
+
+char *volume(const char *);
+void volume_ev(XEvent);
+
+char *datetime(const char *);
 
 #endif

@@ -10,11 +10,9 @@
 #define BAR_HEIGHT  24
 #define BGCOLOR    0
 #define ALTFGCOLOR 1
+#define ALTBGCOLOR 8
 #define FGCOLOR    2
 #define LOGOCOLOR  3
-
-#define CPUFONT 2
-#define MEMFONT 2
 
 static const char *colors[] = {
 	"#222222", /* black */
@@ -26,12 +24,27 @@ static const char *colors[] = {
 	"#2f8419", /* normal color */
 	"#f5a70a", /* warning color */
 	"#ed5456", /* critical color */
+
+	"#555555", /* dark gray */
 };
 
 static const char *font_names[] = {
 	"sans-serif:size=10",
 	"emoji:size=10",
 	"monospace:size=8",
+};
+
+/* for modules on the right (float: right;) */
+static Module modules[] = {
+	/* function    argument        event handler */
+	{ datetime,    "%H:%M",        NULL },
+	{ thermal,     THERMAL_PATH,   NULL },
+	{ filesystem,  "/",            NULL },
+	{ volume,      NULL,           volume_ev },
+	/*
+	{ memory,      NULL,           NULL },
+	{ loadavg,     NULL,           NULL },
+	*/
 };
 
 #endif

@@ -1,4 +1,5 @@
 #include <math.h>
+#include <stdio.h>
 #include <sys/statvfs.h>
 #include <time.h>
 
@@ -11,8 +12,8 @@ calc_used(struct statvfs mp)
 	return (mp.f_blocks - mp.f_bavail) / (double)mp.f_blocks * 100 + 0.5;
 }
 
-int
-disk_perc()
+static int
+disk_perc(const char *mpoint)
 {
 	static struct statvfs mp;
 	static time_t prevtime;
@@ -22,7 +23,15 @@ disk_perc()
 		return calc_used(mp);
 	prevtime = curtime;
 
-	if (statvfs("/", &mp))
+	if (statvfs(mpoint, &mp))
 		return -1;
 	return calc_used(mp);
+}
+
+char *
+filesystem(const char *mpoint)
+{
+	int perc = disk_perc(mpoint);
+	sprintf(buf, " %d％", perc);
+	return buf;
 }

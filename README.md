@@ -2,6 +2,8 @@
 
 A lightweight status bar for bspwm.
 
+[bspwmbar.png](docs/bspwmbar.png)
+
 ## Features and TODO
 
 -[x] Support multiple monitors (Xrandr)
@@ -14,11 +16,11 @@ A lightweight status bar for bspwm.
 -[x] ALSA volume
 -[x] Memory usage
 -[x] CPU usage per core
+-[x] Implements clickable label
+-[ ] Pulseaudio support
 -[ ] GitHub notification
--[ ] Replace Xlib with XCB?
 -[ ] Refactor code
 -[ ] Decrease memory usage
--[ ] Implements clickable label
 -[ ] BSD support
 
 ## Configure

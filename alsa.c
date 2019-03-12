@@ -1,13 +1,51 @@
 #include <alloca.h>
 #include <alsa/asoundlib.h>
+#include <X11/Xlib.h>
 
 #include "bspwmbar.h"
+#include "util.h"
 
-snd_ctl_t *ctl;
-AlsaInfo info = { 0 };
+enum {
+	ALSACTL_GETINFO = 1,
+	ALSACTL_TOGGLE_MUTE,
+	ALSACTL_VOLUME_UP,
+	ALSACTL_VOLUME_DOWN,
+};
 
-void
-alsa_update()
+static snd_ctl_t *ctl;
+static int initialized = 0;
+static AlsaInfo info = { 0 };
+
+static void
+get_info(snd_mixer_elem_t *elem)
+{
+	if (!initialized) {
+		snd_mixer_selem_get_playback_volume_range(elem, &info.min, &info.max);
+		info.oneper = BIGGER((info.max - info.min) / 100, 1);
+		initialized = 1;
+	}
+
+	snd_mixer_selem_get_playback_volume(elem, 0, &info.volume);
+	snd_mixer_selem_get_playback_switch(elem, 0, &info.unmuted);
+}
+
+static void
+toggle_mute(snd_mixer_elem_t *elem)
+{
+	info.unmuted = info.unmuted ? 0 : 1;
+	snd_mixer_selem_set_playback_switch_all(elem, info.unmuted);
+}
+
+static void
+set_volume(snd_mixer_elem_t *elem, long volume)
+{
+	if (!BETWEEN(volume, info.min, info.max))
+		volume = SMALLER(BIGGER(volume, info.min), info.max);
+	snd_mixer_selem_set_playback_volume_all(elem, volume);
+}
+
+static void
+alsa_control(uint8_t ctlno)
 {
 	snd_mixer_t *h;
 	snd_mixer_selem_id_t *sid;
@@ -22,22 +60,28 @@ alsa_update()
 	snd_mixer_selem_id_set_name(sid, "Master");
 	snd_mixer_elem_t *elem = snd_mixer_find_selem(h, sid);
 
-	long min, max;
-	if (!snd_mixer_selem_get_playback_volume_range(elem, &min, &max)) {
-		if (!snd_mixer_selem_get_playback_volume(elem, 0, &info.volume))
-			info.volume = (double)info.volume / max * 100 + 0.5;
+	switch (ctlno) {
+	case ALSACTL_GETINFO:
+		get_info(elem);
+		break;
+	case ALSACTL_TOGGLE_MUTE:
+		toggle_mute(elem);
+		break;
+	case ALSACTL_VOLUME_UP:
+		set_volume(elem, info.volume + info.oneper * 5);
+		break;
+	case ALSACTL_VOLUME_DOWN:
+		set_volume(elem, info.volume - info.oneper * 5);
+		break;
 	}
-	snd_mixer_selem_get_playback_switch(elem, 0, &info.unmuted);
+
 	snd_mixer_close(h);
 }
 
-AlsaInfo
-alsa_info()
+void
+alsa_update()
 {
-	if (!info.volume)
-		alsa_update();
-
-	return info;
+	alsa_control(ALSACTL_GETINFO);
 }
 
 int
@@ -78,4 +122,37 @@ void
 alsa_disconnect()
 {
 	snd_ctl_close(ctl);
+}
+
+char *
+volume(const char *arg)
+{
+	(void)arg;
+
+	if (!info.volume)
+		alsa_update();
+
+	const char *mark = (info.unmuted) ? "墳" : "婢";
+	sprintf(buf, "%s %.0lf％", mark, (double)info.volume / info.max * 100);
+	return buf;
+}
+
+void
+volume_ev(XEvent ev)
+{
+	switch (ev.type) {
+	case ButtonPress:
+		switch (ev.xbutton.button) {
+		case Button1:
+			alsa_control(ALSACTL_TOGGLE_MUTE);
+			break;
+		case Button4:
+			alsa_control(ALSACTL_VOLUME_UP);
+			break;
+		case Button5:
+			alsa_control(ALSACTL_VOLUME_DOWN);
+			break;
+		}
+		break;
+	}
 }
