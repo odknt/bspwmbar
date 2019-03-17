@@ -1,7 +1,6 @@
 /* See LICENSE file for copyright and license details. */
 
-/* See LICENSE file for copyright and license details. */
-/* See LICENSE file for copyright and license details. */#include <alloca.h>
+#include <alloca.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>

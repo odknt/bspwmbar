@@ -1,7 +1,6 @@
 /* See LICENSE file for copyright and license details. */
 
-/* See LICENSE file for copyright and license details. */
-/* See LICENSE file for copyright and license details. */#include <stdlib.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
