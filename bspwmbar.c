@@ -9,6 +9,7 @@
 #include <X11/extensions/Xrandr.h>
 #include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
+#include <X11/Xproto.h>
 #include <X11/Xutil.h>
 #include <locale.h>
 #include <stdio.h>
@@ -60,6 +61,7 @@ enum {
 	STATE_ACTIVE = 1 << 8
 };
 
+int epfd = 0;
 XftColor cols[LENGTH(colors)];
 
 typedef struct {
@@ -641,6 +643,40 @@ bspwmbar_send(Bspwmbar *bar, char *cmd, int len)
 	return send(bar->fd, cmd, len, 0);
 }
 
+static void
+polling_stop()
+{
+	if (epfd > 0)
+		close(epfd);
+}
+
+int
+error_handler(Display *dpy, XErrorEvent *err)
+{
+	switch (err->type) {
+	case Success:
+	case BadWindow:
+		switch (err->request_code) {
+		case X_ChangeWindowAttributes:
+		case X_GetProperty:
+			return 0;
+		}
+		break;
+	default:
+		fprintf(stderr, "Unknown Error Code: %d\n", err->type);
+	}
+	XGetErrorText(dpy, err->error_code, buf, sizeof(buf) - 1);
+	fprintf(stderr, "XError: %s\n", buf);
+	XGetErrorText(dpy, err->request_code, buf, sizeof(buf) - 1);
+	fprintf(stderr, "  MajorCode: %d (%s)\n", err->request_code, buf);
+	fprintf(stderr, "  ResourceID: %ld\n", err->resourceid);
+	fprintf(stderr, "  SerialNumer: %ld\n", err->serial);
+
+	polling_stop();
+
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -650,7 +686,7 @@ main(int argc, char *argv[])
 	struct epoll_event ev, events[MAX_EVENTS];
 	struct epoll_event xev, aev;
 	Display *dpy;
-	int epfd, xfd, nfd, i, len;
+	int xfd, nfd, i, len;
 	XEvent event;
 
 	(void)(argc);
@@ -660,6 +696,7 @@ main(int argc, char *argv[])
 
 	if (!(dpy = XOpenDisplay(NULL)))
 		die("XOpenDisplay(): Failed to open display\n");
+	XSetErrorHandler(error_handler);
 
 	load_colors(dpy, DefaultScreen(dpy));
 
