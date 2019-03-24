@@ -32,6 +32,7 @@ static const char *colors[] = {
 
 static const char *font_names[] = {
 	"sans-serif:size=10",
+	"SymbolsNerdFont:size=10",
 	"emoji:size=10",
 	"monospace:size=8",
 };

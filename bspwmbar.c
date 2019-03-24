@@ -260,7 +260,7 @@ get_window_title(Display *dpy, Window win)
 		return title;
 	if ((title = get_window_prop(dpy, win, "WM_NAME")))
 		return title;
-	return (unsigned char *)"";
+	return NULL;
 }
 
 void
@@ -453,8 +453,7 @@ bspwmbar_render(Bspwmbar *bar)
 	Window win = get_active_window(bar->dpy, bar->scr);
 	char *title = NULL;
 	Bool title_suffix = 0;
-	if (win) {
-		title = (char *)get_window_title(bar->dpy, win);
+	if (win && (title = (char *)get_window_title(bar->dpy, win))) {
 		size_t i = 0, len = 0;
 		FcChar32 dst;
 		for (; i < strlen(title) && len < TITLE_MAXSZ; len++)
