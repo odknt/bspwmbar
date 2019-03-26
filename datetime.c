@@ -16,8 +16,9 @@ datetime(const char *fmt)
 	time_t timer = time(NULL);
 	struct tm *tptr = localtime(&timer);
 
-	char *format = alloca(strlen(fmt) + strlen(prefix));
-	sprintf(format, "%s%s", prefix, fmt);
+	int size = SMALLER(strlen(fmt) + strlen(prefix), 128);
+	char *format = alloca(size);
+	snprintf(format, size, "%s%s", prefix, fmt);
 	strftime(buf, sizeof(buf), format, tptr);
 
 	return buf;
