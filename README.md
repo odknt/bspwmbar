@@ -26,3 +26,16 @@ A lightweight status bar for bspwm.
 ## Configure
 
 Modify and recompile `config.h` like `dwm`, `st`.
+
+## Build & Debug
+
+```sh
+# or `make optimized`
+make
+
+# debug build with AddressSanitizer
+make debug
+
+# static analyze with clang
+scan-build make debug
+```
