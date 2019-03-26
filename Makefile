@@ -4,7 +4,7 @@ OBJ = bspwmbar.o util.o cpu.o memory.o disk.o alsa.o thermal.o datetime.o
 
 include config.mk
 
-all: bspwmbar
+all: optimized
 
 bspwmbar: $(OBJ)
 
@@ -18,9 +18,22 @@ config.h:
 
 config: config.def.h
 	cp config.def.h config.h
+.PHONY: config
 
 clean:
 	rm -f bspwmar $(OBJ)
+.PHONY: clean
+
+optimized: CFLAGS+= -Os
+optimized: LDFLAGS+= -s
+optimized: bspwmbar
+.PHONY: optimized
+
+debug: CFLAGS+= -fsanitize=address -fno-omit-frame-pointer -g
+debug: LDFLAGS+= -fsanitize=address
+debug: clean bspwmbar
+	./bspwmbar
+.PHONY: debug
 
 run: bspwmbar
 	./bspwmbar
