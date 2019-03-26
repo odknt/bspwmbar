@@ -5,6 +5,7 @@
 #define _POSIX_C_SOURCE 199309L
 
 #include <alloca.h>
+#include <assert.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/Xft/Xft.h>
@@ -98,7 +99,7 @@ typedef struct {
 	Display *dpy;
 	int scr;
 	GC gc;
-	XftFont *fonts[FONT_MAXSZ];
+	XftFont *fonts[LENGTH(font_names)];
 	int nfont;
 	BarWindow *xbars;
 	int nxbar;
@@ -495,7 +496,7 @@ bspwmbar_render(Bspwmbar *bar)
 		if (title)
 			x += bspwmbar_drawstring(bar, xw->draw, &fg, title, x);
 		if (title_suffix)
-			x += bspwmbar_drawstring(bar, xw->draw, &fg, "…", x);
+			bspwmbar_drawstring(bar, xw->draw, &fg, "…", x);
 
 		x = xw->width - pad;
 		for (int j = 0; j < bar->nlabel; j++) {
@@ -516,8 +517,7 @@ bspwmbar_render(Bspwmbar *bar)
 
 		/* render cpu */
 		x -= pad;
-		x -= bspwmbar_drawcpu(bar, xw, cores, ncore, x);
-		x -= pad;
+		bspwmbar_drawcpu(bar, xw, cores, ncore, x);
 	}
 
 	if (title)
@@ -567,13 +567,13 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 		die("bspwm_connect(): Failed to connect to the socket\n");
 
 	/* get monitors */
-	xrr_mon = XRRGetMonitors(dpy, RootWindow(dpy, DefaultScreen(dpy)), 1,
+	xrr_mon = XRRGetMonitors(dpy, RootWindow(dpy, scr), 1,
                              &nmon);
 	bar->xbars = (BarWindow *)malloc(sizeof(BarWindow) * nmon);
 	bar->nxbar = nmon;
 
 	/* create window per monitor */
-	xrr_res = XRRGetScreenResources(dpy, RootWindow(dpy, DefaultScreen(dpy)));
+	xrr_res = XRRGetScreenResources(dpy, RootWindow(dpy, scr));
 	for (i = 0; i < xrr_res->noutput; i++) {
 		xrr_out = XRRGetOutputInfo(dpy, xrr_res, xrr_res->outputs[i]);
 		if (xrr_out->connection != RR_Connected)
@@ -628,7 +628,6 @@ bspwmbar_destroy(Bspwmbar *bar)
 
 	for (i = 0; i < bar->nfont; i++)
 		XftFontClose(bar->dpy, bar->fonts[i]);
-	free(bar->fonts);
 	for (i = 0; i < bar->nxbar; i++) {
 		XftDrawDestroy(bar->xbars[i].draw);
 		XDestroyWindow(bar->dpy, bar->xbars[i].win);
@@ -681,7 +680,6 @@ main(int argc, char *argv[])
 {
 	char buf[1024];
 	Bspwmbar bar;
-	// pthread_t pt;
 	struct epoll_event ev, events[MAX_EVENTS];
 	struct epoll_event xev, aev;
 	Display *dpy;
@@ -697,6 +695,7 @@ main(int argc, char *argv[])
 		die("XOpenDisplay(): Failed to open display\n");
 	XSetErrorHandler(error_handler);
 
+	assert(dpy != NULL);
 	load_colors(dpy, DefaultScreen(dpy));
 
 	if (bspwmbar_init(&bar, dpy, DefaultScreen(dpy)))

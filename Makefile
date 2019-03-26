@@ -24,7 +24,7 @@ clean:
 	rm -f bspwmar $(OBJ)
 .PHONY: clean
 
-optimized: CFLAGS+= -Os
+optimized: CFLAGS+= -Os -DNDEBUG
 optimized: LDFLAGS+= -s
 optimized: bspwmbar
 .PHONY: optimized
@@ -32,7 +32,6 @@ optimized: bspwmbar
 debug: CFLAGS+= -fsanitize=address -fno-omit-frame-pointer -g
 debug: LDFLAGS+= -fsanitize=address
 debug: clean bspwmbar
-	./bspwmbar
 .PHONY: debug
 
 run: bspwmbar
