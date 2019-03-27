@@ -13,6 +13,7 @@
 #include <X11/Xproto.h>
 #include <X11/Xutil.h>
 #include <locale.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -694,9 +695,22 @@ error_handler(Display *dpy, XErrorEvent *err)
 	return 0;
 }
 
+void
+signal_handler(int signum) {
+	switch (signum) {
+	case SIGINT:
+	case SIGTERM:
+		polling_stop();
+		break;
+	}
+}
+
 int
 main(int argc, char *argv[])
 {
+	(void)(argc);
+	(void)(argv);
+
 	char buf[1024];
 	Bspwmbar bar;
 	struct epoll_event ev, events[MAX_EVENTS];
@@ -704,9 +718,12 @@ main(int argc, char *argv[])
 	Display *dpy;
 	int xfd, nfd, i, len;
 	XEvent event;
+	struct sigaction act, oldact;
 
-	(void)(argc);
-	(void)(argv);
+	act.sa_handler = &signal_handler;
+	act.sa_flags = 0;
+	sigaction(SIGTERM, &act, &oldact);
+	sigaction(SIGINT, &act, &oldact);
 
 	setlocale(LC_ALL, "");
 
