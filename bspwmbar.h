@@ -30,10 +30,16 @@ typedef struct {
 	long oneper;
 } AlsaInfo;
 
+typedef struct {
+	unsigned long version;
+	unsigned long flags;
+} XEmbedInfo;
+
 typedef struct _TrayItem {
 	struct _TrayItem *prev;
 	struct _TrayItem *next;
-	Window   win;
+	Window win;
+	XEmbedInfo info;
 } TrayItem;
 
 typedef struct {

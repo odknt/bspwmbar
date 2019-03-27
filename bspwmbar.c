@@ -528,6 +528,7 @@ bspwmbar_render(Bspwmbar *bar)
 		x -= bspwmbar_drawcpu(bar, xw, cores, ncore, x);
 		x -= pad;
 
+		/* render tray items */
 		if (xw->win == tray.win) {
 			x -= pad;
 			TrayItem *item = tray.items;
@@ -756,6 +757,7 @@ main(int argc, char *argv[])
 		die("epoll_ctl(): Failed to add to epoll afd\n");
 
 	Atom filter = XInternAtom(dpy, "_NET_WM_NAME", 1);
+	Atom xembed_info = XInternAtom(dpy, "_XEMBED_INFO", 1);
 
 	/* timerfd */
 	struct itimerspec interval = { {1, 0}, {1, 0} };
@@ -807,6 +809,8 @@ main(int argc, char *argv[])
 						}
 						break;
 					case PropertyNotify:
+						if (event.xproperty.atom == xembed_info)
+							systray_handle(&tray, event);
 						if (event.xproperty.atom == filter)
 							need_render = 1;
 						break;

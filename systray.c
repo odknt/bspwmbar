@@ -25,6 +25,8 @@
 #define XEMBED_UNREGISTER_ACCELERATOR 13
 #define XEMBED_ACTIVATE_ACCELERATOR   14
 
+#define XEMBED_MAPPED (1 << 0)
+
 enum {
 	SYSTRAY_TIME,
 	SYSTRAY_OPCODE,
@@ -111,13 +113,36 @@ xembed_unembed_window(TrayWindow *tray, Window child)
 	return 0;
 }
 
-static void
+static int
+xembed_getinfo(TrayWindow *tray, Window win, XEmbedInfo *info)
+{
+	Atom type, infoatom;
+	int format, status;
+	unsigned long nitem, bytes_after;
+	unsigned char *data;
+
+	infoatom = XInternAtom(tray->dpy, "_XEMBED_INFO", 0);
+	status = XGetWindowProperty(tray->dpy, win, infoatom, 0, 2, 0, infoatom,
+	                            &type, &format, &nitem, &bytes_after, &data);
+	XSync(tray->dpy, 0);
+	if (status)
+		return 1;
+
+	unsigned long *long_data = (unsigned long *)data;
+	info->version = long_data[0];
+	info->flags = long_data[1];
+	XFree(data);
+
+	return 0;
+}
+
+static TrayItem *
 systray_append_item(TrayWindow *tray, Window win)
 {
 	if (!tray->items) {
 		tray->items = (TrayItem *)calloc(1, sizeof(TrayItem));
 		tray->items->win = win;
-		return;
+		return tray->items;
 	}
 
 	TrayItem *item = tray->items;
@@ -125,7 +150,20 @@ systray_append_item(TrayWindow *tray, Window win)
 		item = item->next;
 
 	item->next = (TrayItem *)calloc(1, sizeof(TrayItem));
-	tray->win = win;
+	item->next->win = win;
+	item->next->prev = item;
+
+	return item->next;
+}
+
+static TrayItem *
+systray_find_item(TrayWindow *tray, Window win)
+{
+	TrayItem *item = tray->items;
+	for (; item; item = item->next)
+		if (item->win == win)
+			return item;
+	return NULL;
 }
 
 void
@@ -143,7 +181,9 @@ systray_remove_item(TrayWindow *tray, Window win)
 			item->next->prev = item->prev;
 		break;
 	}
-	if (item == tray->items)
+	if (!item)
+		return;
+	if (!item->next && item == tray->items)
 		tray->items = NULL;
 	if (item)
 		free(item);
@@ -152,28 +192,49 @@ systray_remove_item(TrayWindow *tray, Window win)
 int
 systray_handle(TrayWindow *tray, XEvent ev)
 {
-	if (ev.xclient.type != ClientMessage)
-		return 1;
+	Atom atom;
 
-	Atom atomop = XInternAtom(tray->dpy, "_NET_SYSTEM_TRAY_OPCODE", 0);
-	if (ev.xclient.message_type != atomop)
-		return 1;
+	switch (ev.type) {
+	case ClientMessage:
+		atom = XInternAtom(tray->dpy, "_NET_SYSTEM_TRAY_OPCODE", 0);
+		if (ev.xclient.message_type != atom)
+			return 1;
 
-	Window win = 0;
-	switch (ev.xclient.data.l[SYSTRAY_OPCODE]) {
-	case SYSTRAY_REQUEST_DOCK:
-		win = ev.xclient.data.l[SYSTRAY_DATA1];
+		Window win = 0;
+		TrayItem *item;
+		switch (ev.xclient.data.l[SYSTRAY_OPCODE]) {
+		case SYSTRAY_REQUEST_DOCK:
+			win = ev.xclient.data.l[SYSTRAY_DATA1];
 
-		XSelectInput (tray->dpy, win, StructureNotifyMask);
-		XWithdrawWindow(tray->dpy, win, 0);
-		XReparentWindow(tray->dpy, win, tray->win, 0, 0);
-		XSync(tray->dpy, 0);
+			XSelectInput(tray->dpy, win, StructureNotifyMask | PropertyChangeMask);
+			XReparentWindow(tray->dpy, win, tray->win, 0, 0);
 
-		systray_append_item(tray, win);
-		xembed_embedded_notify(tray, win, 0);
+			if (!(item = systray_append_item(tray, win)))
+				return 1;
+
+			xembed_getinfo(tray, win, &item->info);
+			xembed_embedded_notify(tray, win, 0);
+			break;
+		}
+		break;
+	case PropertyNotify:
+		if (ev.xproperty.state == PropertyNewValue) {
+			if (!(item = systray_find_item(tray, ev.xproperty.window)))
+				return 1;
+			XEmbedInfo info;
+			xembed_getinfo(tray, ev.xproperty.window, &info);
+
+			if (!(item->info.flags ^ info.flags))
+				return 0;
+
+			item->info.flags = info.flags;
+			if (item->info.flags & XEMBED_MAPPED)
+				XMapRaised(tray->dpy, item->win);
+			else
+				XUnmapWindow(tray->dpy, item->win);
+		}
 		break;
 	}
-
 	return 0;
 }
 
