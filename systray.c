@@ -171,20 +171,23 @@ systray_remove_item(TrayWindow *tray, Window win)
 {
 	TrayItem *item = tray->items;
 
-	for (; item; item = item->next) {
-		if (item->win != win)
-			continue;
-
-		if (item->prev)
-			item->prev->next = item->next;
-		if (item->next)
-			item->next->prev = item->prev;
-		break;
-	}
+	for (; item; item = item->next)
+		if (item->win == win)
+			break;
 	if (!item)
 		return;
-	if (!item->next && item == tray->items)
-		tray->items = NULL;
+
+	if (item->prev)
+		item->prev->next = item->next;
+	if (item->next)
+		item->next->prev = item->prev;
+
+	if (item == tray->items) {
+		if (item->next)
+			tray->items = item->next;
+		else
+			tray->items = NULL;
+	}
 	if (item)
 		free(item);
 }
@@ -221,7 +224,7 @@ systray_handle(TrayWindow *tray, XEvent ev)
 		if (ev.xproperty.state == PropertyNewValue) {
 			if (!(item = systray_find_item(tray, ev.xproperty.window)))
 				return 1;
-			XEmbedInfo info;
+			XEmbedInfo info = { 0 };
 			xembed_getinfo(tray, ev.xproperty.window, &info);
 
 			if (!(item->info.flags ^ info.flags))

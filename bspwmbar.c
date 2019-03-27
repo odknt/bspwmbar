@@ -533,6 +533,8 @@ bspwmbar_render(Bspwmbar *bar)
 			x -= pad;
 			TrayItem *item = tray.items;
 			for (; item; item = item->next) {
+				if (!item->info.flags)
+					continue;
 				x -= 16;
 				XMoveResizeWindow(tray.dpy, item->win, x, 4, 16, 16);
 				x -= pad;
