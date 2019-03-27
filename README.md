@@ -17,6 +17,7 @@ A lightweight status bar for bspwm.
 - [x] Memory usage
 - [x] CPU usage per core
 - [x] Implements clickable label
+- [x] System Tray support
 - [ ] Pulseaudio support
 - [ ] GitHub notification
 - [ ] Refactor code

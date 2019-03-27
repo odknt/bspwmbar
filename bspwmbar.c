@@ -64,6 +64,7 @@ enum {
 
 int epfd = 0;
 XftColor cols[LENGTH(colors)];
+TrayWindow tray;
 
 typedef struct {
 	Module *module;
@@ -121,9 +122,16 @@ getxftcolor(Display *dpy, int scr, const char *colstr)
 static void
 load_colors(Display *dpy, int scr)
 {
-	for (size_t i = 0; i < LENGTH(colors); i++) {
+	for (size_t i = 0; i < LENGTH(colors); i++)
 		cols[i] = getxftcolor(dpy, scr, colors[i]);
-	}
+}
+
+static void
+free_colors(Display *dpy, int scr)
+{
+	Colormap cmap = DefaultColormap(dpy, scr);
+	for (size_t i = 0; i < LENGTH(colors); i++)
+		XftColorFree(dpy, DefaultVisual(dpy, scr), cmap, &cols[i]);
 }
 
 static WsState
@@ -197,13 +205,13 @@ barwindow_init(Display *dpy, int scr, int x, int y, int width, int height,
 	xw->pixmap = XCreatePixmap(dpy, RootWindow(dpy, scr), width, height,
 	                           DefaultDepth(dpy, scr));
 
-	wattrs.background_pixmap = xw->pixmap;
+	wattrs.background_pixel = cols[BGCOLOR].pixel;
 	wattrs.event_mask = NoEventMask;
 
 	xw->win = XCreateWindow(dpy, RootWindow(dpy, scr), x, y, width, height, 0,
-	                        DefaultDepth(dpy, scr), CopyFromParent,
-	                        DefaultVisual(dpy, scr),
-	                        CWBackPixmap | CWEventMask,
+	                        CopyFromParent, CopyFromParent,
+	                        CopyFromParent,
+	                        CWBackPixel | CWEventMask,
 	                        &wattrs);
 
 	/* set window type */
@@ -517,7 +525,18 @@ bspwmbar_render(Bspwmbar *bar)
 
 		/* render cpu */
 		x -= pad;
-		bspwmbar_drawcpu(bar, xw, cores, ncore, x);
+		x -= bspwmbar_drawcpu(bar, xw, cores, ncore, x);
+		x -= pad;
+
+		if (xw->win == tray.win) {
+			x -= pad;
+			TrayItem *item = tray.items;
+			for (; item; item = item->next) {
+				x -= 16;
+				XMoveResizeWindow(tray.dpy, item->win, x, 4, 16, 16);
+				x -= pad;
+			}
+		}
 	}
 
 	if (title)
@@ -607,10 +626,7 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 
 	/* clear background */
 	for (i = 0; i < bar->nxbar; i++) {
-		XSetForeground(dpy, bar->gc, cols[BGCOLOR].pixel);
-		XFillRectangle(dpy, bar->xbars[i].pixmap, bar->gc, 0, 0,
-		               bar->xbars[i].width, bar->xbars[i].height);
-
+		XClearWindow(dpy, bar->xbars[i].win);
 		XLowerWindow(dpy, bar->xbars[i].win);
 		XMapWindow(dpy, bar->xbars[i].win);
 	}
@@ -701,6 +717,10 @@ main(int argc, char *argv[])
 	if (bspwmbar_init(&bar, dpy, DefaultScreen(dpy)))
 		die("bspwmbar_init(): Failed to init bspwmbar\n");
 
+	tray.win = bar.xbars[0].win;
+	tray.dpy = dpy;
+	systray_init(&tray);
+
 	if (bspwmbar_send(&bar, SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1)
 		die("bspwmbar_send(): Failed to send command to bspwm\n");
 
@@ -790,6 +810,14 @@ main(int argc, char *argv[])
 						if (event.xproperty.atom == filter)
 							need_render = 1;
 						break;
+					case ClientMessage:
+						systray_handle(&tray, event);
+						need_render = 1;
+						break;
+					case DestroyNotify:
+						systray_remove_item(&tray, event.xdestroywindow.window);
+						need_render = 1;
+						break;
 					}
 				}
 			} else if (events[i].data.fd == afd) {
@@ -810,7 +838,9 @@ CLEANUP:
 
 	close(tfd);
 	alsa_disconnect();
+	systray_destroy(&tray);
 	bspwmbar_destroy(&bar);
+	free_colors(dpy, DefaultScreen(dpy));
 	if (XCloseDisplay(dpy))
 		die("XCloseDisplay(): Failed to close display\n");
 

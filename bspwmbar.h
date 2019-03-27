@@ -30,6 +30,18 @@ typedef struct {
 	long oneper;
 } AlsaInfo;
 
+typedef struct _TrayItem {
+	struct _TrayItem *prev;
+	struct _TrayItem *next;
+	Window   win;
+} TrayItem;
+
+typedef struct {
+	Display *dpy;
+	Window win;
+	TrayItem *items;
+} TrayWindow;
+
 int cpu_perc(CoreInfo **);
 int mem_perc();
 
@@ -44,5 +56,10 @@ char *volume(const char *);
 void volume_ev(XEvent);
 
 char *datetime(const char *);
+
+int systray_init(TrayWindow *);
+void systray_destroy(TrayWindow *);
+void systray_remove_item(TrayWindow *, Window);
+int systray_handle(TrayWindow *, XEvent);
 
 #endif
