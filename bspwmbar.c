@@ -89,7 +89,6 @@ typedef struct {
 
 typedef struct {
 	Window win;
-	Pixmap pixmap;
 	XftDraw *draw;
 	Monitor monitor;
 
@@ -203,9 +202,6 @@ barwindow_init(Display *dpy, int scr, int x, int y, int width, int height,
 	XSetWindowAttributes wattrs;
 	XClassHint *hint;
 
-	xw->pixmap = XCreatePixmap(dpy, RootWindow(dpy, scr), width, height,
-	                           DefaultDepth(dpy, scr));
-
 	wattrs.background_pixel = cols[BGCOLOR].pixel;
 	wattrs.event_mask = NoEventMask;
 
@@ -251,13 +247,13 @@ barwindow_init(Display *dpy, int scr, int x, int y, int width, int height,
 static Window
 get_active_window(Display *dpy, int scr)
 {
+	Window win = 0;
 	unsigned char *prop;
 	if (!(prop = get_window_prop(dpy, RootWindow(dpy, scr),
 	                             "_NET_ACTIVE_WINDOW")))
 		return 0;
-	if (!strlen((const char *)prop))
-		return 0;
-	Window win = prop[0] + (prop[1] << 8) + (prop[2] << 16) + (prop[3] << 24);
+	if (strlen((const char *)prop))
+		win = prop[0] + (prop[1] << 8) + (prop[2] << 16) + (prop[3] << 24);
 	XFree(prop);
 	return win;
 }
@@ -599,14 +595,14 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 	xrr_res = XRRGetScreenResources(dpy, RootWindow(dpy, scr));
 	for (i = 0; i < xrr_res->noutput; i++) {
 		xrr_out = XRRGetOutputInfo(dpy, xrr_res, xrr_res->outputs[i]);
-		if (xrr_out->connection != RR_Connected)
-			continue;
-		for (j = 0; j < nmon; j++) {
-			if (xrr_res->outputs[i] != xrr_mon[j].outputs[0])
-				continue;
-			barwindow_init(dpy, scr, xrr_mon[j].x, 0, xrr_mon[j].width,
-			               BAR_HEIGHT, &bar->xbars[j]);
-			strncpy(bar->xbars[j].monitor.name, xrr_out->name, NAME_MAXSZ);
+		if (xrr_out->connection == RR_Connected) {
+			for (j = 0; j < nmon; j++) {
+				if (xrr_res->outputs[i] != xrr_mon[j].outputs[0])
+					continue;
+				barwindow_init(dpy, scr, xrr_mon[j].x, 0, xrr_mon[j].width,
+				               BAR_HEIGHT, &bar->xbars[j]);
+				strncpy(bar->xbars[j].monitor.name, xrr_out->name, NAME_MAXSZ);
+			}
 		}
 		XRRFreeOutputInfo(xrr_out);
 	}
@@ -653,6 +649,7 @@ bspwmbar_destroy(Bspwmbar *bar)
 		XDestroyWindow(bar->dpy, bar->xbars[i].win);
 	}
 	free(bar->xbars);
+	XFreeGC(bar->dpy, bar->gc);
 }
 
 static int
