@@ -36,3 +36,11 @@ debug: clean bspwmbar
 
 run: bspwmbar
 	./bspwmbar
+
+install:
+	cp bspwmbar $(PREFIX)/bin/
+.PHONY: install
+
+uninstall:
+	rm -f $(PREFIX)/bin/bspwmbar
+.PHONY: uninstall
