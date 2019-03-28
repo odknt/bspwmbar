@@ -63,9 +63,9 @@ enum {
 	STATE_ACTIVE = 1 << 8
 };
 
-int epfd = 0;
-XftColor cols[LENGTH(colors)];
-TrayWindow tray;
+static int epfd = 0;
+static XftColor cols[LENGTH(colors)];
+static TrayWindow tray;
 
 typedef struct {
 	Module *module;
@@ -736,7 +736,8 @@ main(int argc, char *argv[])
 
 	tray.win = bar.xbars[0].win;
 	tray.dpy = dpy;
-	systray_init(&tray);
+	if (systray_init(&tray))
+		die("systray_init(): Selection already owned by other window\n");
 
 	if (bspwmbar_send(&bar, SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1)
 		die("bspwmbar_send(): Failed to send command to bspwm\n");
@@ -827,7 +828,7 @@ main(int argc, char *argv[])
 					case PropertyNotify:
 						if (event.xproperty.atom == xembed_info)
 							systray_handle(&tray, event);
-						if (event.xproperty.atom == filter)
+						else if (event.xproperty.atom == filter)
 							need_render = 1;
 						break;
 					case ClientMessage:
