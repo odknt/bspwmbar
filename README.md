@@ -28,6 +28,12 @@ A lightweight status bar for bspwm.
 
 Modify and recompile `config.h` like `dwm`, `st`.
 
+## Install
+
+You can install from [AUR](https://aur.archlinux.org/packages/bspwmbar/) on Arch Linux.
+
+Or build and install by using `make` and `make install`.
+
 ## Build & Debug
 
 ```sh
