@@ -38,6 +38,7 @@ run: bspwmbar
 	./bspwmbar
 
 install:
+	mkdir -p $(PREFIX)/bin/
 	cp bspwmbar $(PREFIX)/bin/
 .PHONY: install
 
