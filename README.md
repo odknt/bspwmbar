@@ -1,5 +1,8 @@
 # bspwmbar
 
+![AUR Version](https://img.shields.io/aur/version/bspwmbar.svg)
+![AUR License](https://img.shields.io/aur/license/bspwmbar.svg)
+
 A lightweight status bar for bspwm.
 
 ![bspwmbar.png](docs/bspwmbar.png)
