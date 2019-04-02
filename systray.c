@@ -53,10 +53,9 @@ systray_init(TrayWindow *tray)
 	char *atomstr = (char *)alloca(len);
 	snprintf(atomstr, len, ATOM_SYSTRAY "%d", DefaultScreen(tray->dpy));
 	systray_atom = XInternAtom(tray->dpy, atomstr, 1);
-	XSetSelectionOwner(tray->dpy, systray_atom, tray->win, CurrentTime);
-
-	if (XGetSelectionOwner(tray->dpy, systray_atom) != tray->win)
+	if (XGetSelectionOwner(tray->dpy, systray_atom) != None)
 		return -1;
+	XSetSelectionOwner(tray->dpy, systray_atom, tray->win, CurrentTime);
 
 	wattrs.event_mask = ClientMessage;
 	XChangeWindowAttributes(tray->dpy, tray->win, CWEventMask, &wattrs);
