@@ -2,6 +2,8 @@
 
 OBJ = bspwmbar.o util.o cpu.o memory.o disk.o alsa.o thermal.o datetime.o systray.o
 
+BINPREFIX=$(PREFIX)/bin
+
 include config.mk
 
 all: optimized
@@ -38,10 +40,10 @@ run: bspwmbar
 	./bspwmbar
 
 install:
-	mkdir -p $(PREFIX)/bin/
-	cp bspwmbar $(PREFIX)/bin/
+	mkdir -p $(DESTDIR)$(BINPREFIX)
+	cp bspwmbar $(DESTDIR)$(BINPREFIX)/
 .PHONY: install
 
 uninstall:
-	rm -f $(PREFIX)/bin/bspwmbar
+	rm -f $(DESTDIR)$(BINPREFIX)/bspwmbar
 .PHONY: uninstall
