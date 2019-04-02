@@ -223,7 +223,7 @@ barwindow_init(Display *dpy, int scr, int x, int y, int width, int height,
 	long strut_partial[] = {
 		0, 0, height, 0,
 		0, 0, 0, 0,
-		x + width - 1, 0, 0, 0,
+		x, x + width - 1, 0, 0,
 	};
 	set_window_prop(dpy, xw->win, XA_CARDINAL, "_NET_WM_STRUT_PARTIAL",
 	                PropModeReplace, strut_partial, 12);
