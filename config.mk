@@ -6,6 +6,6 @@ MANPREFIX = $(PREFIX)/share/man
 
 CFLAGS  = -std=c99 -pedantic -Wall -Wextra -I/usr/include/freetype2
 LDFLAGS =
-LDLIBS  = -lX11 -lfontconfig -lXft -lXrandr -lxcb -lasound
+LDLIBS  = -lX11 -lfontconfig -lXft -lXrandr -lasound
 
 CC = cc

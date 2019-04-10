@@ -1,8 +1,7 @@
 /* See LICENSE file for copyright and license details. */
 
-#define _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
 #define _XOPEN_SOURCE_EXTENDED
-#define _POSIX_C_SOURCE 199309L
 
 #include <alloca.h>
 #include <assert.h>
@@ -23,7 +22,6 @@
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
-#include <xcb/xcb.h>
 
 typedef struct {
 	char *(* func)(const char *);
@@ -546,6 +544,23 @@ bspwmbar_render(Bspwmbar *bar)
 }
 
 static int
+parse_display(const char *dpy, char **host, int *dnum, int *snum)
+{
+	const char *dpystr;
+	dnum = 0; snum = 0;
+
+	if (dpy)
+		dpystr = dpy;
+	else
+		dpystr = getenv("DISPLAY");
+
+	sscanf(dpystr, "%s:%d.%d", buf, dnum, snum);
+	*host = strndup(buf, strlen(buf));
+
+	return 0;
+}
+
+static int
 bspwm_connect()
 {
 	struct sockaddr_un sock;
@@ -560,7 +575,7 @@ bspwm_connect()
 	if (sp) {
 		snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", sp);
 	} else {
-		if (xcb_parse_display(NULL, &host, &dn, &sn))
+		if (parse_display(NULL, &host, &dn, &sn))
 			snprintf(sock.sun_path, sizeof(sock.sun_path),
 			         "/tmp/bspwm%s_%i_%i-socket", host, dn, sn);
 		free(host);
