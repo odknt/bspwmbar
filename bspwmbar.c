@@ -37,7 +37,6 @@ typedef struct {
 #define SUBSCRIBE_REPORT "subscribe\0report"
 /* epoll max events */
 #define MAX_EVENTS 10
-#define MINCW 3
 
 char buf[1024];
 
@@ -290,7 +289,7 @@ bspwmbar_getdrawwidth(Bspwmbar *bar, char *str, XGlyphInfo *extents)
 
 			XftTextExtentsUtf8(bar->dpy, bar->fonts[j], (FcChar8 *)&str[i], len,
 			                   extents);
-			width += BIGGER(extents->width - extents->x, MINCW);
+			width += extents->x + extents->xOff;
 			break;
 		}
 		i += len;
@@ -316,9 +315,9 @@ bspwmbar_drawstring(Bspwmbar *bar, XftDraw *draw, XftColor *color,
 				continue;
 			XftTextExtentsUtf8(bar->dpy, bar->fonts[j], (FcChar8 *)&str[i], len,
 			                   &extents);
-			XftDrawStringUtf8(draw, color, bar->fonts[j], x + width,
+			XftDrawStringUtf8(draw, color, bar->fonts[j], x + width + extents.x,
 			                  baseline, (FcChar8 *)&str[i], len);
-			width += BIGGER(extents.width - extents.x, MINCW);
+			width += extents.x + extents.xOff;
 			break;
 		}
 		i += len;
