@@ -317,15 +317,16 @@ bspwmbar_getfont(Bspwmbar *bar, FcChar32 rune)
 		FcDefaultSubstitute(pat);
 
 		match = FcFontSetMatch(0, fsets, 1, pat, &result);
+		FcPatternDestroy(pat);
 
 		fcaches[nfcache] = XftFontOpenPattern(bar->dpy, match);
+		FcPatternDestroy(match);
+		FcCharSetDestroy(charset);
+
 		if (!fcaches[nfcache])
 			die("XftFontOpenPattern(): failed seeking fallback font\n");
 
 		i = nfcache++;
-
-		FcPatternDestroy(pat);
-		FcCharSetDestroy(charset);
 	}
 
 	return fcaches[i];
@@ -335,7 +336,7 @@ void
 bspwmbar_loadfonts(Bspwmbar *bar, const char *patstr)
 {
 	FcPattern *pat = FcNameParse((FcChar8 *)patstr);
-	if (!bar->font.pattern)
+	if (!pat)
 		die("bspwmbar_loadfonts(): failed parse pattern: %s\n", patstr);
 
 	FcConfigSubstitute(NULL, pat, FcMatchPattern);
@@ -727,8 +728,11 @@ bspwmbar_destroy(Bspwmbar *bar)
 	close(bar->fd);
 
 	XftFontClose(bar->dpy, bar->font.base);
+	FcPatternDestroy(bar->font.pattern);
+	FcFontSetDestroy(bar->font.set);
 	for (i = 0; i < nfcache; i++)
 		XftFontClose(bar->dpy, fcaches[i]);
+	free(fcaches);
 
 	for (i = 0; i < bar->nxbar; i++) {
 		XftDrawDestroy(bar->xbars[i].draw);
@@ -948,8 +952,6 @@ CLEANUP:
 	systray_destroy(&tray);
 	bspwmbar_destroy(&bar);
 	free_colors(dpy, DefaultScreen(dpy));
-	if (XCloseDisplay(dpy))
-		die("XCloseDisplay(): Failed to close display\n");
 
 	return 0;
 }
