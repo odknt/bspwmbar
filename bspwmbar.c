@@ -383,12 +383,12 @@ bspwmbar_drawstring(Bspwmbar *bar, XftDraw *draw, XftColor *color,
 
 	XftTextExtentsUtf8(bar->dpy, bar->font.base, (FcChar8 *)str, strlen(str),
 	                   &extents);
-	int baseline = BAR_HEIGHT / 2 + extents.y / 2;
 	for (unsigned int i = 0; i < strlen(str); i += len) {
 		int len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
 		font = bspwmbar_getfont(bar, rune);
+		int y = (BAR_HEIGHT - (font->ascent + font->descent) / 2);
 		XftTextExtentsUtf8(bar->dpy, font, (FcChar8 *)&str[i], len, &extents);
-		XftDrawStringUtf8(draw, color, font, x + width + extents.x, baseline,
+		XftDrawStringUtf8(draw, color, font, x + width + extents.x, y,
 		                  (FcChar8 *)&str[i], len);
 		width += extents.x + extents.xOff;
 		i += len;
@@ -400,7 +400,7 @@ static int
 bspwmbar_drawcpu(Bspwmbar *bar, BarWindow *xw, CoreInfo *a, int nproc, int x)
 {
 	XGlyphInfo extents;
-	int maxh = BAR_HEIGHT / 2;
+	int maxh = bar->font.base->ascent;
 	int width = 5;
 	int basey = maxh / 2;
 
@@ -438,7 +438,7 @@ bspwmbar_drawmem(Bspwmbar *bar, BarWindow *xw, size_t memused, int x)
 {
 	XGlyphInfo extents;
 	int width = 5;
-	int maxh = BAR_HEIGHT / 2;
+	int maxh = bar->font.base->ascent;
 	int basey = maxh / 2;
 
 	for (size_t i = 10; i > 0; i--) {
