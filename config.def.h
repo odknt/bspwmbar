@@ -30,12 +30,7 @@ static const char *colors[] = {
 	"#555555", /* dark gray */
 };
 
-static const char *font_names[] = {
-	"sans-serif:size=10",
-	"SymbolsNerdFont:size=10",
-	"emoji:size=10",
-	"monospace:size=8",
-};
+static const char *fontname = "sans-serif:size=10";
 
 /* for modules on the right (float: right;) */
 static Module modules[] = {

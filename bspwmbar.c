@@ -63,6 +63,15 @@ enum {
 static int epfd = 0;
 static XftColor cols[LENGTH(colors)];
 static TrayWindow tray;
+static XftFont **fcaches;
+static int nfcache = 0;
+static int fcachecap = 0;
+
+typedef struct {
+	FcPattern *pattern;
+	FcFontSet *set;
+	XftFont   *base;
+} XFont;
 
 typedef struct {
 	Module *module;
@@ -97,8 +106,7 @@ typedef struct {
 	Display *dpy;
 	int scr;
 	GC gc;
-	XftFont *fonts[LENGTH(font_names)];
-	int nfont;
+	XFont font;
 	BarWindow *xbars;
 	int nxbar;
 
@@ -266,33 +274,100 @@ get_window_title(Display *dpy, Window win)
 	return NULL;
 }
 
-void
-bspwmbar_loadfonts(Bspwmbar *bar, const char **names, size_t len)
+static XftFont *
+bspwmbar_getfont(Bspwmbar *bar, FcChar32 rune)
 {
-	XftFont *font;
-	size_t i;
-	for (i = 0; i < len; i++)
-		if ((font = XftFontOpenName(bar->dpy, bar->scr, names[i])))
-			bar->fonts[bar->nfont++] = font;
+	FcResult result;
+	FcPattern *pat, *match;
+	FcCharSet *charset;
+	FcFontSet *fsets[] = { NULL };
+	int i, idx;
+
+	/* Lookup character index with default font. */
+	idx = XftCharIndex(bar->dpy, bar->font.base, rune);
+	if (idx)
+		return bar->font.base;
+
+	/* fallback on font cache */
+	for (i = 0; i < nfcache; i++) {
+		if ((idx = XftCharIndex(bar->dpy, fcaches[i], rune)))
+			return fcaches[i];
+	}
+
+	/* find font when not found */
+	if (i >= nfcache) {
+		if (bar->font.set)
+			bar->font.set = FcFontSort(0, bar->font.pattern, 1, 0, &result);
+		fsets[0] = bar->font.set;
+
+		if (nfcache >= fcachecap) {
+			fcachecap += 8;
+			fcaches = realloc(fcaches, fcachecap * sizeof(XftFont *));
+		}
+
+		pat = FcPatternDuplicate(bar->font.pattern);
+		charset = FcCharSetCreate();
+
+		/* find font that contains rune and scalable */
+		FcCharSetAddChar(charset, rune);
+		FcPatternAddCharSet(pat, FC_CHARSET, charset);
+		FcPatternAddBool(pat, FC_SCALABLE, 1);
+
+		FcConfigSubstitute(0, pat, FcMatchPattern);
+		FcDefaultSubstitute(pat);
+
+		match = FcFontSetMatch(0, fsets, 1, pat, &result);
+
+		fcaches[nfcache] = XftFontOpenPattern(bar->dpy, match);
+		if (!fcaches[nfcache])
+			die("XftFontOpenPattern(): failed seeking fallback font\n");
+
+		i = nfcache++;
+
+		FcPatternDestroy(pat);
+		FcCharSetDestroy(charset);
+	}
+
+	return fcaches[i];
+}
+
+void
+bspwmbar_loadfonts(Bspwmbar *bar, const char *patstr)
+{
+	FcPattern *pat = FcNameParse((FcChar8 *)patstr);
+	if (!bar->font.pattern)
+		die("bspwmbar_loadfonts(): failed parse pattern: %s\n", patstr);
+
+	FcConfigSubstitute(NULL, pat, FcMatchPattern);
+	XftDefaultSubstitute(bar->dpy, bar->scr, pat);
+
+	FcResult result;
+	FcPattern *match = FcFontMatch(NULL, pat, &result);
+	if (!match) {
+		FcPatternDestroy(match);
+		die("bspwmbar_loadfonts(): failed parse pattern: %s\n", patstr);
+	}
+
+	if (!(bar->font.base = XftFontOpenPattern(bar->dpy, match))) {
+		FcPatternDestroy(pat);
+		FcPatternDestroy(match);
+		die("bspwmbar_loadfonts(): failed open font: %s\n", patstr);
+	}
+
+	bar->font.pattern = pat;
 }
 
 int
 bspwmbar_getdrawwidth(Bspwmbar *bar, char *str, XGlyphInfo *extents)
 {
 	FcChar32 rune = 0;
-	int width = 0;
-	for (unsigned int i = 0; i < strlen(str);) {
-		int len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
-		for (int j = 0; j < bar->nfont; j++) {
-			if (!XftCharExists(bar->dpy, bar->fonts[j], rune))
-				continue;
-
-			XftTextExtentsUtf8(bar->dpy, bar->fonts[j], (FcChar8 *)&str[i], len,
-			                   extents);
-			width += extents->x + extents->xOff;
-			break;
-		}
-		i += len;
+	int width = 0, len = 0;
+	XftFont *font;
+	for (unsigned int i = 0; i < strlen(str); i += len) {
+		len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
+		font = bspwmbar_getfont(bar, rune);
+		XftTextExtentsUtf8(bar->dpy, font, (FcChar8 *)&str[i], len, extents);
+		width += extents->x + extents->xOff;
 	}
 	return width;
 }
@@ -303,23 +378,19 @@ bspwmbar_drawstring(Bspwmbar *bar, XftDraw *draw, XftColor *color,
 {
 	XGlyphInfo extents = { 0 };
 	FcChar32 rune = 0;
-	int width = 0;
+	int width = 0, len = 0;
+	XftFont *font;
 
-	XftTextExtentsUtf8(bar->dpy, bar->fonts[0], (FcChar8 *)str, strlen(str),
+	XftTextExtentsUtf8(bar->dpy, bar->font.base, (FcChar8 *)str, strlen(str),
 	                   &extents);
 	int baseline = BAR_HEIGHT / 2 + extents.y / 2;
-	for (unsigned int i = 0; i < strlen(str);) {
+	for (unsigned int i = 0; i < strlen(str); i += len) {
 		int len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
-		for (int j = 0; j < bar->nfont; j++) {
-			if (!XftCharExists(bar->dpy, bar->fonts[j], rune))
-				continue;
-			XftTextExtentsUtf8(bar->dpy, bar->fonts[j], (FcChar8 *)&str[i], len,
-			                   &extents);
-			XftDrawStringUtf8(draw, color, bar->fonts[j], x + width + extents.x,
-			                  baseline, (FcChar8 *)&str[i], len);
-			width += extents.x + extents.xOff;
-			break;
-		}
+		font = bspwmbar_getfont(bar, rune);
+		XftTextExtentsUtf8(bar->dpy, font, (FcChar8 *)&str[i], len, &extents);
+		XftDrawStringUtf8(draw, color, font, x + width + extents.x, baseline,
+		                  (FcChar8 *)&str[i], len);
+		width += extents.x + extents.xOff;
 		i += len;
 	}
 	return width;
@@ -626,14 +697,13 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 	/* initialize */
 	bar->dpy = dpy;
 	bar->scr = scr;
-	bar->nfont = 0;
 
 	/* init labels */
 	bar->nlabel = LENGTH(modules);
 	for (i = 0; i < bar->nlabel; i++)
 		bar->labels[i].module = &modules[i];
 
-	bspwmbar_loadfonts(bar, font_names, LENGTH(font_names));
+	bspwmbar_loadfonts(bar, fontname);
 	bspwmbar_getdrawwidth(bar, ascii_table, &extents);
 
 	bar->gc = XCreateGC(dpy, RootWindow(dpy, scr), GCGraphicsExposures, &gcv);
@@ -656,8 +726,10 @@ bspwmbar_destroy(Bspwmbar *bar)
 
 	close(bar->fd);
 
-	for (i = 0; i < bar->nfont; i++)
-		XftFontClose(bar->dpy, bar->fonts[i]);
+	XftFontClose(bar->dpy, bar->font.base);
+	for (i = 0; i < nfcache; i++)
+		XftFontClose(bar->dpy, fcaches[i]);
+
 	for (i = 0; i < bar->nxbar; i++) {
 		XftDrawDestroy(bar->xbars[i].draw);
 		XDestroyWindow(bar->dpy, bar->xbars[i].win);
