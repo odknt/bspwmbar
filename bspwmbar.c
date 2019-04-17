@@ -1,27 +1,19 @@
 /* See LICENSE file for copyright and license details. */
 
 #define _XOPEN_SOURCE 700
-#define _XOPEN_SOURCE_EXTENDED
 
 #include <alloca.h>
-#include <assert.h>
 #include <X11/Xatom.h>
-#include <X11/extensions/Xrandr.h>
 #include <X11/Xft/Xft.h>
-#include <X11/Xlib.h>
 #include <X11/Xproto.h>
-#include <X11/Xutil.h>
+#include <X11/extensions/Xrandr.h>
 #include <locale.h>
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/timerfd.h>
 #include <sys/un.h>
 #include <time.h>
-#include <unistd.h>
 
 typedef struct {
 	char *(* func)(const char *);
@@ -818,7 +810,6 @@ main(int argc, char *argv[])
 		die("XOpenDisplay(): Failed to open display\n");
 	XSetErrorHandler(error_handler);
 
-	assert(dpy != NULL);
 	load_colors(dpy, DefaultScreen(dpy));
 
 	if (bspwmbar_init(&bar, dpy, DefaultScreen(dpy)))
