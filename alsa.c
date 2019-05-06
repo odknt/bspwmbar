@@ -107,7 +107,7 @@ alsa_need_update()
 
 	snd_ctl_event_alloca(&event);
 	if (snd_ctl_read(ctl, event) < 0)
-		return 0;
+		return -1;
 	if (snd_ctl_event_get_type(event) != SND_CTL_EVENT_ELEM)
 		return 0;
 

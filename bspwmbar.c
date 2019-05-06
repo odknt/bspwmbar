@@ -923,8 +923,18 @@ main(int argc, char *argv[])
 					}
 				}
 			} else if (events[i].data.fd == afd) {
-				if (alsa_need_update())
+				int res = alsa_need_update();
+				if (res == -1) {
+					/* reconnect to ALSA */
+					alsa_disconnect();
+					close(afd);
+					afd = alsa_connect();
+					aev.data.fd = afd;
+					if (epoll_ctl(epfd, EPOLL_CTL_ADD, afd, &aev) == -1)
+						die("epoll_ctl(): Failed to add to epoll afd\n");
+				} else if (res == 1) {
 					need_render = 1;
+				}
 			} else if (events[i].data.fd == tfd) {
 				read(tfd, &tcnt, sizeof(uint64_t));
 				need_render = 1;
