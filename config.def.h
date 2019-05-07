@@ -18,6 +18,8 @@
 #define FGCOLOR    2
 #define LOGOCOLOR  3
 
+const char *workspace_chars[] = { "", "" };
+
 const char *colors[] = {
 	"#222222", /* black */
 	"#7f7f7f", /* gray */
@@ -43,6 +45,8 @@ const Poller pollers[] = {
 /* for modules on the right (float: right;) */
 const Module modules[] = {
 	/* function    argument        event handler */
+	{ logo,        "",           NULL },
+	{ workspace,   NULL,           NULL },
 	{ datetime,    "%H:%M",        NULL },
 	{ thermal,     THERMAL_PATH,   NULL },
 	{ filesystem,  "/",            NULL },

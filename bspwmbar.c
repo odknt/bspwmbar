@@ -9,6 +9,7 @@
 #include <X11/extensions/Xrandr.h>
 #include <locale.h>
 #include <signal.h>
+#include <stdint.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/timerfd.h>
@@ -44,6 +45,13 @@ enum {
 
 	STATE_ACTIVE = 1 << 8
 };
+
+typedef enum {
+	DA_RIGHT = 0,
+	DA_LEFT,
+	/* currently not supported the below */
+	DA_CENTER
+} DrawAlign;
 
 typedef struct {
 	FcPattern *pattern;
@@ -84,14 +92,21 @@ typedef struct {
 	int x, y, width, height;
 } BarWindow;
 
+typedef struct _DC {
+	BarWindow xbar;
+	GC gc;
+	DrawAlign align;
+	int x;
+} DrawCtx;
+
 typedef struct {
 	int fd;
 	Display *dpy;
 	int scr;
 	GC gc;
 	XFont font;
-	BarWindow *xbars;
-	int nxbar;
+	DrawCtx *dcs;
+	int ndc;
 
 	Label labels[LENGTH(modules)];
 	int nlabel;
@@ -108,10 +123,17 @@ static XftColor cols[LENGTH(colors)];
 static XftFont **fcaches;
 static int nfcache = 0;
 static int fcachecap = 0;
+static int celwidth = 0;
 
 static int epfd = 0;
 static struct epoll_event events[MAX_EVENTS];
 static PollFD pollfds[LENGTH(pollers)];
+
+XftColor *
+getcolor(int index)
+{
+	return &cols[index];
+}
 
 static XftColor
 getxftcolor(Display *dpy, int scr, const char *colstr)
@@ -274,7 +296,7 @@ get_window_title(Display *dpy, Window win)
 }
 
 static XftFont *
-bspwmbar_getfont(Bspwmbar *bar, FcChar32 rune)
+getfont(FcChar32 rune)
 {
 	FcResult result;
 	FcPattern *pat, *match;
@@ -283,28 +305,28 @@ bspwmbar_getfont(Bspwmbar *bar, FcChar32 rune)
 	int i, idx;
 
 	/* Lookup character index with default font. */
-	idx = XftCharIndex(bar->dpy, bar->font.base, rune);
+	idx = XftCharIndex(bar.dpy, bar.font.base, rune);
 	if (idx)
-		return bar->font.base;
+		return bar.font.base;
 
 	/* fallback on font cache */
 	for (i = 0; i < nfcache; i++) {
-		if ((idx = XftCharIndex(bar->dpy, fcaches[i], rune)))
+		if ((idx = XftCharIndex(bar.dpy, fcaches[i], rune)))
 			return fcaches[i];
 	}
 
 	/* find font when not found */
 	if (i >= nfcache) {
-		if (!bar->font.set)
-			bar->font.set = FcFontSort(0, bar->font.pattern, 1, 0, &result);
-		fsets[0] = bar->font.set;
+		if (!bar.font.set)
+			bar.font.set = FcFontSort(0, bar.font.pattern, 1, 0, &result);
+		fsets[0] = bar.font.set;
 
 		if (nfcache >= fcachecap) {
 			fcachecap += 8;
 			fcaches = realloc(fcaches, fcachecap * sizeof(XftFont *));
 		}
 
-		pat = FcPatternDuplicate(bar->font.pattern);
+		pat = FcPatternDuplicate(bar.font.pattern);
 		charset = FcCharSetCreate();
 
 		/* find font that contains rune and scalable */
@@ -318,7 +340,7 @@ bspwmbar_getfont(Bspwmbar *bar, FcChar32 rune)
 		match = FcFontSetMatch(0, fsets, 1, pat, &result);
 		FcPatternDestroy(pat);
 
-		fcaches[nfcache] = XftFontOpenPattern(bar->dpy, match);
+		fcaches[nfcache] = XftFontOpenPattern(bar.dpy, match);
 		FcPatternDestroy(match);
 		FcCharSetDestroy(charset);
 
@@ -331,77 +353,103 @@ bspwmbar_getfont(Bspwmbar *bar, FcChar32 rune)
 	return fcaches[i];
 }
 
-void
-bspwmbar_loadfonts(Bspwmbar *bar, const char *patstr)
+static void
+loadfonts(const char *patstr)
 {
 	FcPattern *pat = FcNameParse((FcChar8 *)patstr);
 	if (!pat)
-		die("bspwmbar_loadfonts(): failed parse pattern: %s\n", patstr);
+		die("loadfonts(): failed parse pattern: %s\n", patstr);
 
 	FcConfigSubstitute(NULL, pat, FcMatchPattern);
-	XftDefaultSubstitute(bar->dpy, bar->scr, pat);
+	XftDefaultSubstitute(bar.dpy, bar.scr, pat);
 
 	FcResult result;
 	FcPattern *match = FcFontMatch(NULL, pat, &result);
 	if (!match) {
 		FcPatternDestroy(match);
-		die("bspwmbar_loadfonts(): failed parse pattern: %s\n", patstr);
+		die("loadfonts(): failed parse pattern: %s\n", patstr);
 	}
 
-	if (!(bar->font.base = XftFontOpenPattern(bar->dpy, match))) {
+	if (!(bar.font.base = XftFontOpenPattern(bar.dpy, match))) {
 		FcPatternDestroy(pat);
 		FcPatternDestroy(match);
-		die("bspwmbar_loadfonts(): failed open font: %s\n", patstr);
+		die("loadfonts(): failed open font: %s\n", patstr);
 	}
 	FcPatternDestroy(match);
 
-	bar->font.pattern = pat;
+	bar.font.pattern = pat;
 }
 
 int
-bspwmbar_getdrawwidth(Bspwmbar *bar, char *str, XGlyphInfo *extents)
+getdrawwidth(const char *str, XGlyphInfo *extents)
 {
 	FcChar32 rune = 0;
 	int width = 0, len = 0;
 	XftFont *font;
 	for (unsigned int i = 0; i < strlen(str); i += len) {
 		len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
-		font = bspwmbar_getfont(bar, rune);
-		XftTextExtentsUtf8(bar->dpy, font, (FcChar8 *)&str[i], len, extents);
+		font = getfont(rune);
+		XftTextExtentsUtf8(bar.dpy, font, (FcChar8 *)&str[i], len, extents);
 		width += extents->x + extents->xOff;
 	}
 	return width;
 }
 
-int
-bspwmbar_drawstring(Bspwmbar *bar, XftDraw *draw, XftColor *color,
-                    const char *str, int x)
+static void
+drawspace(DC dc, int num)
 {
+	DrawCtx *dctx = (DrawCtx *)dc;
+	switch ((int)dctx->align) {
+	case DA_LEFT:
+		dctx->x += num;
+		break;
+	case DA_RIGHT:
+		dctx->x -= num;
+		break;
+	}
+}
+
+static void
+drawstring(DC dc, XftColor *color, const char *str)
+{
+	DrawCtx *dctx = (DrawCtx *)dc;
 	XGlyphInfo extents = { 0 };
 	FcChar32 rune = 0;
 	int width = 0, len = 0;
 	XftFont *font;
 
-	XftTextExtentsUtf8(bar->dpy, bar->font.base, (FcChar8 *)str, strlen(str),
-	                   &extents);
+	if (dctx->align == DA_RIGHT)
+		dctx->x -= getdrawwidth(str, &extents);
+
 	for (unsigned int i = 0; i < strlen(str); i += len) {
 		int len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
-		font = bspwmbar_getfont(bar, rune);
+		font = getfont(rune);
 		int y = (BAR_HEIGHT - (font->ascent + font->descent) / 2);
-		XftTextExtentsUtf8(bar->dpy, font, (FcChar8 *)&str[i], len, &extents);
-		XftDrawStringUtf8(draw, color, font, x + width + extents.x, y,
+		XftTextExtentsUtf8(bar.dpy, font, (FcChar8 *)&str[i], len, &extents);
+		XftDrawStringUtf8(dctx->xbar.draw, color, font,
+		                  dctx->x + width + extents.x, y,
 		                  (FcChar8 *)&str[i], len);
 		width += extents.x + extents.xOff;
 		i += len;
 	}
-	return width;
+
+	if (dctx->align == DA_LEFT)
+		dctx->x += width;
 }
 
-static int
-bspwmbar_drawcpu(Bspwmbar *bar, BarWindow *xw, CoreInfo *a, int nproc, int x)
+void
+drawtext(DC dc, const char *str)
 {
-	XGlyphInfo extents;
-	int maxh = bar->font.base->ascent;
+	drawspace(dc, celwidth);
+	drawstring(dc, &cols[FGCOLOR], str);
+	drawspace(dc, celwidth);
+}
+
+static void
+drawcpu(DC dc, CoreInfo *a, int nproc)
+{
+	DrawCtx *dctx = (DrawCtx *)dc;
+	int maxh = bar.font.base->ascent;
 	int width = 5;
 	int basey = maxh / 2;
 
@@ -418,28 +466,24 @@ bspwmbar_drawcpu(Bspwmbar *bar, BarWindow *xw, CoreInfo *a, int nproc, int x)
 		} else {
 			fg = cols[7];
 		}
-		XSetForeground(bar->dpy, bar->gc, cols[ALTBGCOLOR].pixel);
-		XFillRectangle(bar->dpy, xw->win, bar->gc, x - width, basey, width,
+		XSetForeground(bar.dpy, dctx->gc, cols[ALTBGCOLOR].pixel);
+		XFillRectangle(bar.dpy, dctx->xbar.win, dctx->gc, dctx->x - width, basey, width,
 		               maxh);
 
-		XSetForeground(bar->dpy, bar->gc, fg.pixel);
-		XFillRectangle(bar->dpy, xw->win, bar->gc, x - width,
+		XSetForeground(bar.dpy, dctx->gc, fg.pixel);
+		XFillRectangle(bar.dpy, dctx->xbar.win, dctx->gc, dctx->x - width,
 		               basey + (maxh - height), width, height);
-		x -= width + 1;
+		dctx->x -= width + 1;
 	}
-	int label_width = bspwmbar_getdrawwidth(bar, "cpu: ", &extents);
-	bspwmbar_drawstring(bar, xw->draw, &cols[FGCOLOR], "cpu:",
-	                    x - label_width);
-
-	return (width + 1) * nproc + label_width;
+	drawstring(dc, &cols[FGCOLOR], "cpu: ");
 }
 
-static int
-bspwmbar_drawmem(Bspwmbar *bar, BarWindow *xw, size_t memused, int x)
+static void
+drawmem(DC dc, size_t memused)
 {
-	XGlyphInfo extents;
+	DrawCtx *dctx = (DrawCtx *)dc;
 	int width = 5;
-	int maxh = bar->font.base->ascent;
+	int maxh = bar.font.base->ascent;
 	int basey = maxh / 2;
 
 	for (size_t i = 10; i > 0; i--) {
@@ -453,17 +497,16 @@ bspwmbar_drawmem(Bspwmbar *bar, BarWindow *xw, size_t memused, int x)
 		else if (memused >= 90)
 			fg = cols[7];
 
-		XSetForeground(bar->dpy, bar->gc, fg.pixel);
-		XFillRectangle(bar->dpy, xw->win, bar->gc, x - width, basey, width, maxh);
-		x -= width + 1;
+		XSetForeground(bar.dpy, dctx->gc, fg.pixel);
+		XFillRectangle(bar.dpy, dctx->xbar.win, dctx->gc, dctx->x - width,
+		               basey, width, maxh);
+		dctx->x -= width + 1;
 	}
-	int label_width = bspwmbar_getdrawwidth(bar, "mem: ", &extents);
-	bspwmbar_drawstring(bar, xw->draw, &cols[FGCOLOR], "mem:", x - label_width);
-	return (width + 1) * 10 + label_width;
+	drawstring(dc, &cols[FGCOLOR], "mem: ");
 }
 
-void
-bspwmbar_parse(Bspwmbar *bar, char *report)
+static void
+bspwm_parse(char *report)
 {
 	int i, j, nws = 0, name_len;
 	int len = strlen(report);
@@ -482,10 +525,10 @@ bspwmbar_parse(Bspwmbar *bar, char *report)
 			strncpy(name, &report[i], name_len);
 			name[name_len] = '\0';
 			i = j;
-			for (j = 0; j < bar->nxbar; j++)
-				if (!strncmp(bar->xbars[j].monitor.name, name,
+			for (j = 0; j < bar.ndc; j++)
+				if (!strncmp(bar.dcs[j].xbar.monitor.name, name,
 				             strlen(name)))
-					curmon = &bar->xbars[j].monitor;
+					curmon = &bar.dcs[j].xbar.monitor;
 			if (curmon)
 				curmon->is_active = (tok == 'M') ? 1 : 0;
 			break;
@@ -515,15 +558,62 @@ bspwmbar_parse(Bspwmbar *bar, char *report)
 }
 
 void
-bspwmbar_render()
+logo(DC dc, const char *args)
 {
-	XftColor col;
+	DrawCtx *dctx = (DrawCtx *)dc;
+	int pad = 0;
+
+	switch ((int)dctx->align) {
+	case DA_LEFT:
+		pad = celwidth;
+		break;
+	case DA_RIGHT:
+		pad = -celwidth;
+		break;
+	}
+	dctx->x += pad;
+	drawstring(dc, &cols[LOGOCOLOR], args);
+	dctx->x += pad;
+}
+
+static void
+render_label(DrawCtx *dc)
+{
+	int x = 0, width = 0, pad = 0;
+
+	for (int j = 0; j < bar.nlabel; j++) {
+		x = dc->x; width = 0; pad = 0;
+
+		bar.labels[j].module->func(dc, bar.labels[j].module->arg);
+		switch ((int)dc->align) {
+		case DA_LEFT:
+			width = dc->x - x;
+			pad = celwidth;
+			break;
+		case DA_RIGHT:
+			width = x - dc->x;
+			pad = -celwidth;
+			break;
+		}
+		x = dc->x;
+		if (width) {
+			width += celwidth;
+			x = dc->x + pad;
+		}
+		bar.labels[j].width = width;
+		bar.labels[j].x = x;
+	}
+}
+
+static void
+render()
+{
 	XftColor fg = cols[FGCOLOR];
-	XftColor altfg = cols[ALTFGCOLOR];
 	XGlyphInfo extents = { 0 };
 
 	/* padding width */
-	int pad = bspwmbar_getdrawwidth(&bar, "a", &extents);
+	if (!celwidth)
+		celwidth = getdrawwidth("a", &extents);
 
 	Window win = get_active_window(bar.dpy, bar.scr);
 	char *title = NULL;
@@ -542,68 +632,45 @@ bspwmbar_render()
 	int ncore = cpu_perc(&cores);
 	int mem = mem_perc();
 
-	for (int i = 0; i < bar.nxbar; i++) {
-		BarWindow *xw = &bar.xbars[i];
-		int x = 0, width;
+	for (int i = 0; i < bar.ndc; i++) {
+		DC dc = (DC)&bar.dcs[i];
+		BarWindow *xw = &bar.dcs[i].xbar;
+		dc->align = DA_LEFT;
+		dc->x = 0;
 
 		XClearWindow(bar.dpy, xw->win);
 
-		/* render logo */
-		x = pad * 2;
-		width = bspwmbar_drawstring(&bar, xw->draw, &cols[LOGOCOLOR], "", x);
-		x += width + pad;
-
-		/* render workspaces */
-		for (int j = 0; j < xw->monitor.nworkspaces; j++) {
-			char *ws;
-			x += pad;
-			if (xw->monitor.workspaces[j].state & STATE_ACTIVE)
-				ws = "";
-			else
-				ws = "";
-			col = (xw->monitor.workspaces[j].state == STATE_FREE) ? altfg : fg;
-			x += bspwmbar_drawstring(&bar, xw->draw, &col, ws, x);
-		}
-
 		/* render title */
-		x += pad * 2;
+		dc->x += celwidth * 2;
 		if (title)
-			x += bspwmbar_drawstring(&bar, xw->draw, &fg, title, x);
+			drawstring(dc, &fg, title);
 		if (title_suffix)
-			bspwmbar_drawstring(&bar, xw->draw, &fg, "…", x);
+			drawstring(dc, &fg, "…");
 
-		x = xw->width - pad;
-		for (int j = 0; j < bar.nlabel; j++) {
-			char *tmp = bar.labels[j].module->func(bar.labels[j].module->arg);
-			if (!tmp)
-				continue;
-			width = bspwmbar_getdrawwidth(&bar, tmp, &extents) + pad;
-			x -= width;
-			bspwmbar_drawstring(&bar, xw->draw, &fg, tmp, x);
-			bar.labels[j].width = width;
-			bar.labels[j].x = x -= pad;
-		}
+		dc->x = xw->width - celwidth;
+		dc->align = DA_RIGHT;
+		render_label(dc);
 
 		/* render mem */
-		x -= pad;
-		x -= bspwmbar_drawmem(&bar, xw, mem, x);
-		x -= pad;
+		dc->x -= celwidth;
+		drawmem(dc, mem);
+		dc->x -= celwidth;
 
 		/* render cpu */
-		x -= pad;
-		x -= bspwmbar_drawcpu(&bar, xw, cores, ncore, x);
-		x -= pad;
+		dc->x -= celwidth;
+		drawcpu((DC)dc, cores, ncore);
+		dc->x -= celwidth;
 
 		/* render tray items */
 		if (xw->win == tray.win) {
-			x -= pad;
+			dc->x -= celwidth;
 			TrayItem *item = tray.items;
 			for (; item; item = item->next) {
 				if (!item->info.flags)
 					continue;
-				x -= 16;
-				XMoveResizeWindow(tray.dpy, item->win, x, 4, 16, 16);
-				x -= pad;
+				dc->x -= 16;
+				XMoveResizeWindow(tray.dpy, item->win, dc->x, 4, 16, 16);
+				dc->x -= celwidth;
 			}
 		}
 	}
@@ -657,8 +724,8 @@ bspwm_connect()
 	return fd;
 }
 
-int
-bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
+static int
+bspwmbar_init(Display *dpy, int scr)
 {
 	XRRScreenResources *xrr_res;
 	XRRMonitorInfo *xrr_mon;
@@ -668,14 +735,14 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 	int i, j, nmon;
 
 	/* connect bspwm socket */
-	if ((bar->fd = bspwm_connect()) == -1)
+	if ((bar.fd = bspwm_connect()) == -1)
 		die("bspwm_connect(): Failed to connect to the socket\n");
 
 	/* get monitors */
 	xrr_mon = XRRGetMonitors(dpy, RootWindow(dpy, scr), 1,
                              &nmon);
-	bar->xbars = (BarWindow *)malloc(sizeof(BarWindow) * nmon);
-	bar->nxbar = nmon;
+	bar.dcs = (DrawCtx *)malloc(sizeof(DrawCtx) * nmon);
+	bar.ndc = nmon;
 
 	/* create window per monitor */
 	xrr_res = XRRGetScreenResources(dpy, RootWindow(dpy, scr));
@@ -686,8 +753,9 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 				if (xrr_res->outputs[i] != xrr_mon[j].outputs[0])
 					continue;
 				barwindow_init(dpy, scr, xrr_mon[j].x, 0, xrr_mon[j].width,
-				               BAR_HEIGHT, &bar->xbars[j]);
-				strncpy(bar->xbars[j].monitor.name, xrr_out->name, NAME_MAXSZ);
+				               BAR_HEIGHT, &bar.dcs[j].xbar);
+				strncpy(bar.dcs[j].xbar.monitor.name, xrr_out->name,
+				        NAME_MAXSZ);
 			}
 		}
 		XRRFreeOutputInfo(xrr_out);
@@ -696,56 +764,83 @@ bspwmbar_init(Bspwmbar *bar, Display *dpy, int scr)
 	XRRFreeMonitors(xrr_mon);
 
 	/* initialize */
-	bar->dpy = dpy;
-	bar->scr = scr;
+	bar.dpy = dpy;
+	bar.scr = scr;
 
 	/* init labels */
-	bar->nlabel = LENGTH(modules);
-	for (i = 0; i < bar->nlabel; i++)
-		bar->labels[i].module = &modules[i];
+	bar.nlabel = LENGTH(modules);
+	for (i = 0; i < bar.nlabel; i++)
+		bar.labels[i].module = &modules[i];
 
-	bspwmbar_loadfonts(bar, fontname);
-	bspwmbar_getdrawwidth(bar, ascii_table, &extents);
+	loadfonts(fontname);
+	getdrawwidth(ascii_table, &extents);
 
-	bar->gc = XCreateGC(dpy, RootWindow(dpy, scr), GCGraphicsExposures, &gcv);
+	bar.gc = XCreateGC(dpy, RootWindow(dpy, scr), GCGraphicsExposures, &gcv);
 
 	/* clear background */
-	for (i = 0; i < bar->nxbar; i++) {
-		XClearWindow(dpy, bar->xbars[i].win);
-		XLowerWindow(dpy, bar->xbars[i].win);
-		XMapWindow(dpy, bar->xbars[i].win);
+	for (i = 0; i < bar.ndc; i++) {
+		bar.dcs[i].gc = bar.gc;
+		XClearWindow(dpy, bar.dcs[i].xbar.win);
+		XLowerWindow(dpy, bar.dcs[i].xbar.win);
+		XMapWindow(dpy, bar.dcs[i].xbar.win);
 	}
 	XSync(dpy, 0);
 
 	return 0;
 }
 
-void
-bspwmbar_destroy(Bspwmbar *bar)
+static void
+bspwmbar_destroy()
 {
 	int i;
 
-	close(bar->fd);
+	close(bar.fd);
 
-	XftFontClose(bar->dpy, bar->font.base);
-	FcPatternDestroy(bar->font.pattern);
-	FcFontSetDestroy(bar->font.set);
+	XftFontClose(bar.dpy, bar.font.base);
+	FcPatternDestroy(bar.font.pattern);
+	FcFontSetDestroy(bar.font.set);
 	for (i = 0; i < nfcache; i++)
-		XftFontClose(bar->dpy, fcaches[i]);
+		XftFontClose(bar.dpy, fcaches[i]);
 	free(fcaches);
 
-	for (i = 0; i < bar->nxbar; i++) {
-		XftDrawDestroy(bar->xbars[i].draw);
-		XDestroyWindow(bar->dpy, bar->xbars[i].win);
+	for (i = 0; i < bar.ndc; i++) {
+		XftDrawDestroy(bar.dcs[i].xbar.draw);
+		XDestroyWindow(bar.dpy, bar.dcs[i].xbar.win);
 	}
-	free(bar->xbars);
-	XFreeGC(bar->dpy, bar->gc);
+	free(bar.dcs);
+	XFreeGC(bar.dpy, bar.gc);
 }
 
 static int
-bspwmbar_send(Bspwmbar *bar, char *cmd, int len)
+bspwm_send(char *cmd, int len)
 {
-	return send(bar->fd, cmd, len, 0);
+	return send(bar.fd, cmd, len, 0);
+}
+
+void
+workspace(DC dc, const char *args)
+{
+	(void)args;
+	XftColor col;
+	DrawCtx *dctx = (DrawCtx *)dc;
+	BarWindow *xw = (BarWindow *)dc;
+	const char *ws;
+	int cur, max = xw->monitor.nworkspaces;
+
+	drawspace(dc, celwidth);
+	for (int i = 0, j = max - 1; i < max; i++, j--) {
+		cur = (dctx->align == DA_RIGHT) ? j : i;
+		drawspace(dc, celwidth / 2);
+		ws = (xw->monitor.workspaces[cur].state & STATE_ACTIVE)
+		     ? workspace_chars[0]
+		     : workspace_chars[1];
+		col = (xw->monitor.workspaces[cur].state == STATE_FREE)
+		      ? cols[ALTFGCOLOR]
+		      : cols[FGCOLOR];
+		drawstring(dc, &col, ws);
+		drawspace(dc, celwidth / 2);
+	}
+	drawspace(dc, celwidth);
 }
 
 static void
@@ -847,7 +942,7 @@ bspwm_handle(int fd)
 			fprintf(stderr, "bspwm: %s", buf + 1);
 			return PR_FAILED;
 		}
-		bspwmbar_parse(&bar, buf);
+		bspwm_parse(buf);
 		if ((win = get_active_window(bar.dpy, bar.scr)))
 			XChangeWindowAttributes(bar.dpy, win, CWEventMask,
 			                        &attrs);
@@ -943,7 +1038,7 @@ poll_loop(void (* handler)())
 	}
 }
 
-void
+static void
 signal_handler(int signum) {
 	switch (signum) {
 	case SIGINT:
@@ -983,11 +1078,11 @@ main(int argc, char *argv[])
 
 	load_colors(dpy, DefaultScreen(dpy));
 
-	if (bspwmbar_init(&bar, dpy, DefaultScreen(dpy)))
+	if (bspwmbar_init(dpy, DefaultScreen(dpy)))
 		die("bspwmbar_init(): Failed to init bspwmbar\n");
 
 	/* tray initialize */
-	tray.win = bar.xbars[0].win;
+	tray.win = bar.dcs[0].xbar.win;
 	tray.dpy = dpy;
 	XSetErrorHandler(dummy_error_handler);
 	if (systray_init(&tray))
@@ -995,8 +1090,8 @@ main(int argc, char *argv[])
 	XSetErrorHandler(error_handler);
 
 	/* subscribe bspwm report */
-	if (bspwmbar_send(&bar, SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1)
-		die("bspwmbar_send(): Failed to send command to bspwm\n");
+	if (bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1)
+		die("bspwm_send(): Failed to send command to bspwm\n");
 
 	/* epoll */
 	if ((epfd = epoll_create1(0)) == -1)
@@ -1008,8 +1103,8 @@ main(int argc, char *argv[])
 	poll_add(&bfd);
 
 	/* polling X11 event for modules */
-	for (int i = 0; i < bar.nxbar; i++)
-		XSelectInput(bar.dpy, bar.xbars[i].win, ButtonPressMask);
+	for (int i = 0; i < bar.ndc; i++)
+		XSelectInput(bar.dpy, bar.dcs[i].xbar.win, ButtonPressMask);
 
 	/* cache Atom */
 	filter = XInternAtom(bar.dpy, "_NET_WM_NAME", 1);
@@ -1019,11 +1114,11 @@ main(int argc, char *argv[])
 	poll_init();
 
 	/* main loop */
-	poll_loop(bspwmbar_render);
+	poll_loop(render);
 
 	poll_deinit();
 	systray_destroy(&tray);
-	bspwmbar_destroy(&bar);
+	bspwmbar_destroy();
 	free_colors(dpy, DefaultScreen(dpy));
 
 	return 0;

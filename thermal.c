@@ -10,8 +10,8 @@
 
 static char *format = " %d℃";
 
-char *
-thermal(const char *thermal_path)
+void
+thermal(DC dc, const char *thermal_path)
 {
 	static time_t prevtime;
 	static uintmax_t temp;
@@ -24,19 +24,17 @@ thermal(const char *thermal_path)
 			thermal_found = 0;
 	}
 	if (!thermal_found)
-		return NULL;
+		return;
 
 	time_t curtime = time(NULL);
-	if (curtime - prevtime < 1) {
-		sprintf(buf, format, temp / 1000);
-		return buf;
-	}
+	if (curtime - prevtime < 1)
+		goto DRAW_THERMAL;
 	prevtime = curtime;
 
-	if (pscanf(thermal_path, "%ju", &temp) == -1) {
-		return NULL;
-	}
+	if (pscanf(thermal_path, "%ju", &temp) == -1)
+		return;
 
+DRAW_THERMAL:
 	sprintf(buf, format, temp / 1000);
-	return buf;
+	drawtext(dc, buf);
 }

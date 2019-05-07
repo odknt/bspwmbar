@@ -128,8 +128,8 @@ alsa_disconnect()
 	return snd_ctl_close(ctl);
 }
 
-char *
-volume(const char *arg)
+void
+volume(DC dc, const char *arg)
 {
 	(void)arg;
 
@@ -138,7 +138,7 @@ volume(const char *arg)
 
 	const char *mark = (info.unmuted) ? "墳" : "婢";
 	sprintf(buf, "%s %.0lf％", mark, (double)info.volume / info.max * 100);
-	return buf;
+	drawtext(dc, buf);
 }
 
 void

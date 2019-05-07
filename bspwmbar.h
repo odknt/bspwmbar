@@ -5,6 +5,7 @@
 
 #include <unistd.h>
 #include <X11/Xlib.h>
+#include <X11/Xft/Xft.h>
 
 #include "util.h"
 
@@ -59,30 +60,44 @@ typedef struct {
 	PollResult (* handler)(int);
 } Poller;
 
+struct _DC;
+typedef struct _DC *DC;
+typedef void (* ModuleHandler)(DC, const char *);
+typedef void (* XEventHandler)(XEvent);
+
 typedef struct {
-	char *(* func)(const char *);
+	ModuleHandler func;
 	const char *arg;
-	void (* handler)(XEvent);
+	XEventHandler handler;
 } Module;
 
+XftColor *getcolor(int);
+void drawtext(DC, const char *);
+
+/* cpu.c */
 int cpu_perc(CoreInfo **);
+
+/* mem.c */
 int mem_perc();
 
-char *filesystem(const char *);
-
+/* alsa.c */
 int alsa_connect();
 int alsa_disconnect();
 PollResult alsa_update();
-char *thermal(const char *);
-
-char *volume(const char *);
 void volume_ev(XEvent);
 
-char *datetime(const char *);
-
+/* systray.c */
 int systray_init(TrayWindow *);
 void systray_destroy(TrayWindow *);
 void systray_remove_item(TrayWindow *, Window);
 int systray_handle(TrayWindow *, XEvent);
+
+/* modules */
+void logo(DC, const char *);
+void workspace(DC, const char *);
+void filesystem(DC, const char *);
+void thermal(DC, const char *);
+void volume(DC, const char *);
+void datetime(DC, const char *);
 
 #endif
