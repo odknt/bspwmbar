@@ -466,7 +466,7 @@ drawtext(DC dc, const char *str)
 	drawspace(dc, celwidth);
 }
 
-static void
+void
 drawcpu(DC dc, CoreInfo *a, int nproc)
 {
 	DrawCtx *dctx = (DrawCtx *)dc;
@@ -474,6 +474,7 @@ drawcpu(DC dc, CoreInfo *a, int nproc)
 	int width = 5;
 	int basey = maxh / 2;
 
+	drawspace(dc, celwidth);
 	for (int i = nproc - 1; i >= 0; i--) {
 		int avg = (int)a[i].loadavg;
 		int height = BIGGER(maxh * ((double)avg / 100), 1);
@@ -497,9 +498,10 @@ drawcpu(DC dc, CoreInfo *a, int nproc)
 		dctx->x -= width + 1;
 	}
 	drawstring(dc, &cols[FGCOLOR], "cpu: ");
+	drawspace(dc, celwidth);
 }
 
-static void
+void
 drawmem(DC dc, size_t memused)
 {
 	DrawCtx *dctx = (DrawCtx *)dc;
@@ -507,6 +509,7 @@ drawmem(DC dc, size_t memused)
 	int maxh = bar.font.base->ascent;
 	int basey = maxh / 2;
 
+	drawspace(dc, celwidth);
 	for (size_t i = 10; i > 0; i--) {
 		XftColor fg = cols[ALTBGCOLOR];
 		if (i <= 3 && memused >= i * 10)
@@ -524,6 +527,7 @@ drawmem(DC dc, size_t memused)
 		dctx->x -= width + 1;
 	}
 	drawstring(dc, &cols[FGCOLOR], "mem: ");
+	drawspace(dc, celwidth);
 }
 
 static void
@@ -645,10 +649,6 @@ render()
 	if (!celwidth)
 		celwidth = getdrawwidth("a", &extents);
 
-	CoreInfo *cores;
-	int ncore = cpu_perc(&cores);
-	int mem = mem_perc();
-
 	for (int i = 0; i < bar.ndc; i++) {
 		DC dc = (DC)&bar.dcs[i];
 		BarWindow *xw = &bar.dcs[i].xbar;
@@ -660,16 +660,6 @@ render()
 		/* render modules */
 		dc->x += celwidth;
 		render_label(dc);
-
-		/* render mem */
-		dc->x -= celwidth;
-		drawmem(dc, mem);
-		dc->x -= celwidth;
-
-		/* render cpu */
-		dc->x -= celwidth;
-		drawcpu((DC)dc, cores, ncore);
-		dc->x -= celwidth;
 
 		/* render tray items */
 		if (xw->win == tray.win) {

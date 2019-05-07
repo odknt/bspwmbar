@@ -61,3 +61,13 @@ cpu_perc(CoreInfo **cores)
 	*cores = a;
 	return nproc;
 }
+
+void
+cpugraph(DC dc, const char *arg)
+{
+	(void)arg;
+
+	CoreInfo *cores;
+	int ncore = cpu_perc(&cores);
+	drawcpu(dc, cores, ncore);
+}

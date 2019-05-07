@@ -56,10 +56,8 @@ const Module modules[] = {
 	{ thermal,     THERMAL_PATH,   NULL },
 	{ filesystem,  "/",            NULL },
 	{ volume,      NULL,           volume_ev },
-	/*
-	{ memory,      NULL,           NULL },
-	{ loadavg,     NULL,           NULL },
-	*/
+	{ memgraph,    NULL,           NULL },
+	{ cpugraph,    NULL,           NULL },
 };
 
 #endif

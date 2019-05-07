@@ -73,6 +73,8 @@ typedef struct {
 
 XftColor *getcolor(int);
 void drawtext(DC, const char *);
+void drawcpu(DC, CoreInfo *, int);
+void drawmem(DC, size_t);
 
 /* cpu.c */
 int cpu_perc(CoreInfo **);
@@ -103,5 +105,7 @@ void filesystem(DC, const char *);
 void thermal(DC, const char *);
 void volume(DC, const char *);
 void datetime(DC, const char *);
+void cpugraph(DC, const char *);
+void memgraph(DC, const char *);
 
 #endif
