@@ -6,12 +6,13 @@
 #include <time.h>
 #include <X11/Xlib.h>
 
+#include "bspwmbar.h"
 #include "util.h"
 
 static const char *prefix = " ";
 
-char *
-datetime(const char *fmt)
+void
+datetime(DC dc, const char *fmt)
 {
 	time_t timer = time(NULL);
 	struct tm *tptr = localtime(&timer);
@@ -21,5 +22,5 @@ datetime(const char *fmt)
 	snprintf(format, size, "%s%s", prefix, fmt);
 	strftime(buf, sizeof(buf), format, tptr);
 
-	return buf;
+	drawtext(dc, buf);
 }

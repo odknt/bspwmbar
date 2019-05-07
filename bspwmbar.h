@@ -83,7 +83,7 @@ int mem_perc();
 /* alsa.c */
 int alsa_connect();
 int alsa_disconnect();
-PollResult alsa_update();
+PollResult alsa_update(int);
 void volume_ev(XEvent);
 
 /* systray.c */
@@ -92,9 +92,13 @@ void systray_destroy(TrayWindow *);
 void systray_remove_item(TrayWindow *, Window);
 int systray_handle(TrayWindow *, XEvent);
 
+/* modules for alignment */
+void float_right(DC, const char *);
+
 /* modules */
 void logo(DC, const char *);
 void workspace(DC, const char *);
+void windowtitle(DC, const char *);
 void filesystem(DC, const char *);
 void thermal(DC, const char *);
 void volume(DC, const char *);

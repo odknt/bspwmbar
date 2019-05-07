@@ -45,8 +45,13 @@ const Poller pollers[] = {
 /* for modules on the right (float: right;) */
 const Module modules[] = {
 	/* function    argument        event handler */
+	/* float: left; */
 	{ logo,        "",           NULL },
 	{ workspace,   NULL,           NULL },
+	{ windowtitle, "…",           NULL },
+
+	/* float: right; */
+	{ float_right, NULL,           NULL },
 	{ datetime,    "%H:%M",        NULL },
 	{ thermal,     THERMAL_PATH,   NULL },
 	{ filesystem,  "/",            NULL },

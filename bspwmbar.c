@@ -295,6 +295,27 @@ get_window_title(Display *dpy, Window win)
 	return NULL;
 }
 
+void
+windowtitle(DC dc, const char *suffix)
+{
+	char *title = NULL;
+	Window active = get_active_window(bar.dpy, bar.scr);
+
+	if (active && (title = (char *)get_window_title(bar.dpy, active))) {
+		size_t i = 0;
+		FcChar32 dst;
+		strncpy(buf, title, sizeof(buf));
+
+		for (size_t len = 0; i < strlen(title) && len < TITLE_MAXSZ; len++)
+			i += FcUtf8ToUcs4((FcChar8 *)&title[i], &dst, strlen(title) - i);
+		if (i < strlen(buf))
+			strncpy(&buf[i], suffix, strlen(suffix) + 1);
+
+		drawtext(dc, buf);
+		XFree(title);
+	}
+}
+
 static XftFont *
 getfont(FcChar32 rune)
 {
@@ -576,6 +597,16 @@ logo(DC dc, const char *args)
 	dctx->x += pad;
 }
 
+void
+float_right(DC dc, const char *arg)
+{
+	(void)arg;
+
+	DrawCtx *dctx = (DrawCtx *)dc;
+	dc->x = dctx->xbar.width - celwidth;
+	dc->align = DA_RIGHT;
+}
+
 static void
 render_label(DrawCtx *dc)
 {
@@ -608,25 +639,11 @@ render_label(DrawCtx *dc)
 static void
 render()
 {
-	XftColor fg = cols[FGCOLOR];
 	XGlyphInfo extents = { 0 };
 
 	/* padding width */
 	if (!celwidth)
 		celwidth = getdrawwidth("a", &extents);
-
-	Window win = get_active_window(bar.dpy, bar.scr);
-	char *title = NULL;
-	Bool title_suffix = 0;
-	if (win && (title = (char *)get_window_title(bar.dpy, win))) {
-		size_t i = 0, len = 0;
-		FcChar32 dst;
-		for (; i < strlen(title) && len < TITLE_MAXSZ; len++)
-			i += FcUtf8ToUcs4((FcChar8 *)&title[i], &dst, strlen(title) - i);
-		if (i < strlen(title))
-			title_suffix = 1;
-		title[i] = '\0';
-	}
 
 	CoreInfo *cores;
 	int ncore = cpu_perc(&cores);
@@ -640,15 +657,8 @@ render()
 
 		XClearWindow(bar.dpy, xw->win);
 
-		/* render title */
-		dc->x += celwidth * 2;
-		if (title)
-			drawstring(dc, &fg, title);
-		if (title_suffix)
-			drawstring(dc, &fg, "…");
-
-		dc->x = xw->width - celwidth;
-		dc->align = DA_RIGHT;
+		/* render modules */
+		dc->x += celwidth;
 		render_label(dc);
 
 		/* render mem */
@@ -675,10 +685,7 @@ render()
 		}
 	}
 
-	if (title)
-		XFree(title);
-
-	XFlush(bar.dpy);
+	XSync(bar.dpy, bar.scr);
 }
 
 static int
