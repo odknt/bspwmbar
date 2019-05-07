@@ -15,15 +15,8 @@
 #include <sys/un.h>
 #include <time.h>
 
-typedef struct {
-	char *(* func)(const char *);
-	const char *arg;
-	void (* handler)(XEvent);
-} Module;
-
 #include "bspwmbar.h"
 #include "config.h"
-#include "util.h"
 
 /* bspwm commands */
 #define SUBSCRIBE_REPORT "subscribe\0report"
@@ -52,13 +45,6 @@ enum {
 	STATE_ACTIVE = 1 << 8
 };
 
-static int epfd = 0;
-static XftColor cols[LENGTH(colors)];
-static TrayWindow tray;
-static XftFont **fcaches;
-static int nfcache = 0;
-static int fcachecap = 0;
-
 typedef struct {
 	FcPattern *pattern;
 	FcFontSet *set;
@@ -66,7 +52,12 @@ typedef struct {
 } XFont;
 
 typedef struct {
-	Module *module;
+	int          fd;
+	const Poller *poller;
+} PollFD;
+
+typedef struct {
+	const Module *module;
 
 	int x, width;
 } Label;
@@ -105,6 +96,22 @@ typedef struct {
 	Label labels[LENGTH(modules)];
 	int nlabel;
 } Bspwmbar;
+
+static Bspwmbar bar;
+static TrayWindow tray;
+
+/* cache Atom */
+static Atom filter;
+static Atom xembed_info;
+
+static XftColor cols[LENGTH(colors)];
+static XftFont **fcaches;
+static int nfcache = 0;
+static int fcachecap = 0;
+
+static int epfd = 0;
+static struct epoll_event events[MAX_EVENTS];
+static PollFD pollfds[LENGTH(pollers)];
 
 static XftColor
 getxftcolor(Display *dpy, int scr, const char *colstr)
@@ -346,6 +353,7 @@ bspwmbar_loadfonts(Bspwmbar *bar, const char *patstr)
 		FcPatternDestroy(match);
 		die("bspwmbar_loadfonts(): failed open font: %s\n", patstr);
 	}
+	FcPatternDestroy(match);
 
 	bar->font.pattern = pat;
 }
@@ -507,7 +515,7 @@ bspwmbar_parse(Bspwmbar *bar, char *report)
 }
 
 void
-bspwmbar_render(Bspwmbar *bar)
+bspwmbar_render()
 {
 	XftColor col;
 	XftColor fg = cols[FGCOLOR];
@@ -515,12 +523,12 @@ bspwmbar_render(Bspwmbar *bar)
 	XGlyphInfo extents = { 0 };
 
 	/* padding width */
-	int pad = bspwmbar_getdrawwidth(bar, "a", &extents);
+	int pad = bspwmbar_getdrawwidth(&bar, "a", &extents);
 
-	Window win = get_active_window(bar->dpy, bar->scr);
+	Window win = get_active_window(bar.dpy, bar.scr);
 	char *title = NULL;
 	Bool title_suffix = 0;
-	if (win && (title = (char *)get_window_title(bar->dpy, win))) {
+	if (win && (title = (char *)get_window_title(bar.dpy, win))) {
 		size_t i = 0, len = 0;
 		FcChar32 dst;
 		for (; i < strlen(title) && len < TITLE_MAXSZ; len++)
@@ -534,15 +542,15 @@ bspwmbar_render(Bspwmbar *bar)
 	int ncore = cpu_perc(&cores);
 	int mem = mem_perc();
 
-	for (int i = 0; i < bar->nxbar; i++) {
-		BarWindow *xw = &bar->xbars[i];
+	for (int i = 0; i < bar.nxbar; i++) {
+		BarWindow *xw = &bar.xbars[i];
 		int x = 0, width;
 
-		XClearWindow(bar->dpy, xw->win);
+		XClearWindow(bar.dpy, xw->win);
 
 		/* render logo */
 		x = pad * 2;
-		width = bspwmbar_drawstring(bar, xw->draw, &cols[LOGOCOLOR], "", x);
+		width = bspwmbar_drawstring(&bar, xw->draw, &cols[LOGOCOLOR], "", x);
 		x += width + pad;
 
 		/* render workspaces */
@@ -554,36 +562,36 @@ bspwmbar_render(Bspwmbar *bar)
 			else
 				ws = "";
 			col = (xw->monitor.workspaces[j].state == STATE_FREE) ? altfg : fg;
-			x += bspwmbar_drawstring(bar, xw->draw, &col, ws, x);
+			x += bspwmbar_drawstring(&bar, xw->draw, &col, ws, x);
 		}
 
 		/* render title */
 		x += pad * 2;
 		if (title)
-			x += bspwmbar_drawstring(bar, xw->draw, &fg, title, x);
+			x += bspwmbar_drawstring(&bar, xw->draw, &fg, title, x);
 		if (title_suffix)
-			bspwmbar_drawstring(bar, xw->draw, &fg, "…", x);
+			bspwmbar_drawstring(&bar, xw->draw, &fg, "…", x);
 
 		x = xw->width - pad;
-		for (int j = 0; j < bar->nlabel; j++) {
-			char *tmp = bar->labels[j].module->func(bar->labels[j].module->arg);
+		for (int j = 0; j < bar.nlabel; j++) {
+			char *tmp = bar.labels[j].module->func(bar.labels[j].module->arg);
 			if (!tmp)
 				continue;
-			width = bspwmbar_getdrawwidth(bar, tmp, &extents) + pad;
+			width = bspwmbar_getdrawwidth(&bar, tmp, &extents) + pad;
 			x -= width;
-			bspwmbar_drawstring(bar, xw->draw, &fg, tmp, x);
-			bar->labels[j].width = width;
-			bar->labels[j].x = x -= pad;
+			bspwmbar_drawstring(&bar, xw->draw, &fg, tmp, x);
+			bar.labels[j].width = width;
+			bar.labels[j].x = x -= pad;
 		}
 
 		/* render mem */
 		x -= pad;
-		x -= bspwmbar_drawmem(bar, xw, mem, x);
+		x -= bspwmbar_drawmem(&bar, xw, mem, x);
 		x -= pad;
 
 		/* render cpu */
 		x -= pad;
-		x -= bspwmbar_drawcpu(bar, xw, cores, ncore, x);
+		x -= bspwmbar_drawcpu(&bar, xw, cores, ncore, x);
 		x -= pad;
 
 		/* render tray items */
@@ -603,7 +611,7 @@ bspwmbar_render(Bspwmbar *bar)
 	if (title)
 		XFree(title);
 
-	XFlush(bar->dpy);
+	XFlush(bar.dpy);
 }
 
 static int
@@ -774,6 +782,167 @@ error_handler(Display *dpy, XErrorEvent *err)
 	return 0;
 }
 
+static void
+poll_add(PollFD *pollfd)
+{
+	struct epoll_event ev;
+
+	ev.events = EPOLLIN;
+	ev.data.fd = pollfd->fd;
+	ev.data.ptr = (void *)pollfd;
+
+	if (epoll_ctl(epfd, EPOLL_CTL_ADD, pollfd->fd, &ev) == -1)
+		die("epoll_ctl(): Failed to add to epoll fd\n");
+}
+
+static void
+poll_del(PollFD *pollfd)
+{
+	if (pollfd->poller && pollfd->poller->deinit)
+		pollfd->poller->deinit();
+	if (pollfd->fd) {
+		epoll_ctl(epfd, EPOLL_CTL_DEL, pollfd->fd, NULL);
+		close(pollfd->fd);
+	}
+}
+
+static void
+poll_init()
+{
+	for (unsigned long i = 0; i < LENGTH(pollers); i++) {
+		pollfds[i].fd = pollers[i].init();
+		pollfds[i].poller = &pollers[i];
+		if (!pollfds[i].fd)
+			die("poll_init(): pollers[%d].init() returns NULL\n", i);
+		poll_add(&pollfds[i]);
+	}
+}
+
+static void
+poll_deinit()
+{
+	for (unsigned long i = 0; i < LENGTH(pollfds); i++)
+		poll_del(&pollfds[i]);
+}
+
+static PollResult
+timer_reset(int fd)
+{
+	uint64_t tcnt;
+	read(fd, &tcnt, sizeof(uint64_t));
+	return 1;
+}
+
+static PollResult
+bspwm_handle(int fd)
+{
+	size_t len;
+	Window win;
+	XSetWindowAttributes attrs;
+	attrs.event_mask = PropertyChangeMask;
+
+	if ((len = recv(fd, buf, sizeof(buf) - 1, 0)) > 0) {
+		buf[len] = '\0';
+		if (buf[0] == '\x07') {
+			fprintf(stderr, "bspwm: %s", buf + 1);
+			return PR_FAILED;
+		}
+		bspwmbar_parse(&bar, buf);
+		if ((win = get_active_window(bar.dpy, bar.scr)))
+			XChangeWindowAttributes(bar.dpy, win, CWEventMask,
+			                        &attrs);
+		return PR_UPDATE;
+	}
+	return PR_NOOP;
+}
+
+static PollResult
+xev_handle()
+{
+	XEvent event;
+	PollResult res = PR_NOOP;
+
+	/* for X11 events */
+	while (XPending(bar.dpy)) {
+		XNextEvent(bar.dpy, &event);
+		switch (event.type) {
+		case ButtonPress:
+			for (int j = 0; j < bar.nlabel; j++) {
+				if (!bar.labels[j].module->handler)
+					continue;
+				if (bar.labels[j].x < event.xbutton.x &&
+				    event.xbutton.x < bar.labels[j].x +
+				    bar.labels[j].width) {
+					bar.labels[j].module->handler(event);
+					res = PR_UPDATE;
+					break;
+				}
+			}
+			break;
+		case PropertyNotify:
+			if (event.xproperty.atom == xembed_info)
+				systray_handle(&tray, event);
+			else if (event.xproperty.atom == filter)
+				res = PR_UPDATE;
+			break;
+		case ClientMessage:
+			systray_handle(&tray, event);
+			res = PR_UPDATE;
+			break;
+		case DestroyNotify:
+			systray_remove_item(&tray, event.xdestroywindow.window);
+			res = PR_UPDATE;
+			break;
+		}
+	}
+	return res;
+}
+
+static void
+poll_loop(void (* handler)())
+{
+	int i, nfd, need_render;
+	PollFD *pollfd;
+
+	/* timer for rendering at one sec interval */
+	struct itimerspec interval = { {1, 0}, {1, 0} };
+	/* initialize timer */
+	int tfd = timerfd_create(CLOCK_REALTIME, 0);
+	timerfd_settime(tfd, 0, &interval, NULL);
+
+	Poller poller = { NULL, NULL, timer_reset };
+	PollFD timer = { tfd, &poller };
+	poll_add(&timer);
+
+	/* polling X11 event for modules */
+	Poller xpoll = { NULL, NULL, xev_handle };
+	PollFD xfd = { ConnectionNumber(bar.dpy), &xpoll };
+	poll_add(&xfd);
+
+	/* polling fd */
+	while ((nfd = epoll_wait(epfd, events, MAX_EVENTS, -1)) != -1) {
+		need_render = 0;
+		for (i = 0; i < nfd; i++) {
+			pollfd = (PollFD *)events[i].data.ptr;
+			switch ((int)pollfd->poller->handler(pollfd->fd)) {
+			case PR_UPDATE:
+				need_render = 1;
+				break;
+			case PR_REINIT:
+				poll_del(pollfd);
+				pollfd->fd = pollfd->poller->init();
+				poll_add(pollfd);
+				break;
+			}
+		}
+		if (need_render) {
+			/* force render after interval */
+			timerfd_settime(tfd, 0, &interval, NULL);
+			handler();
+		}
+	}
+}
+
 void
 signal_handler(int signum) {
 	switch (signum) {
@@ -798,13 +967,7 @@ main(int argc, char *argv[])
 	(void)(argc);
 	(void)(argv);
 
-	char buf[1024];
-	Bspwmbar bar = { 0 };
-	struct epoll_event ev, events[MAX_EVENTS];
-	struct epoll_event xev, aev;
 	Display *dpy;
-	int xfd, nfd, i, len;
-	XEvent event;
 	struct sigaction act, oldact;
 
 	act.sa_handler = &signal_handler;
@@ -839,129 +1002,26 @@ main(int argc, char *argv[])
 	if ((epfd = epoll_create1(0)) == -1)
 		die("epoll_create1(): Failed to create epoll fd\n");
 
-	ev.events = EPOLLIN;
-	ev.data.fd = bar.fd;
-	if (epoll_ctl(epfd, EPOLL_CTL_ADD, bar.fd, &ev) == -1)
-		die("epoll_ctl(): Failed to add to epoll fd\n");
+	/* polling bspwm report */
+	Poller bpoll = { NULL, NULL, bspwm_handle };
+	PollFD bfd = { bar.fd, &bpoll };
+	poll_add(&bfd);
 
-	/* polling X11 event */
-	for (i = 0; i < bar.nxbar; i++)
+	/* polling X11 event for modules */
+	for (int i = 0; i < bar.nxbar; i++)
 		XSelectInput(bar.dpy, bar.xbars[i].win, ButtonPressMask);
 
-	xfd = ConnectionNumber(bar.dpy);
-	xev.events = EPOLLIN;
-	xev.data.fd = xfd;
-	if (epoll_ctl(epfd, EPOLL_CTL_ADD, xfd, &xev) == -1)
-		die("epoll_ctl(): Failed to add to epoll xfd\n");
+	/* cache Atom */
+	filter = XInternAtom(bar.dpy, "_NET_WM_NAME", 1);
+	xembed_info = XInternAtom(bar.dpy, "_XEMBED_INFO", 1);
 
-	/* event */
-	Window win;
-	XSetWindowAttributes attrs;
-	attrs.event_mask = PropertyChangeMask;
-
-	int afd = alsa_connect();
-	aev.events = EPOLLIN;
-	aev.data.fd = afd;
-
-	if (epoll_ctl(epfd, EPOLL_CTL_ADD, afd, &aev) == -1)
-		die("epoll_ctl(): Failed to add to epoll afd\n");
-
-	Atom filter = XInternAtom(dpy, "_NET_WM_NAME", 1);
-	Atom xembed_info = XInternAtom(dpy, "_XEMBED_INFO", 1);
-
-	/* timerfd */
-	struct itimerspec interval = { {1, 0}, {1, 0} };
-	int tfd = timerfd_create(CLOCK_REALTIME, 0);
-	timerfd_settime(tfd, 0, &interval, NULL);
-
-	struct epoll_event tev;
-	tev.events = EPOLLIN;
-	tev.data.fd = tfd;
-
-	if (epoll_ctl(epfd, EPOLL_CTL_ADD, tfd, &tev) == -1)
-		die("epoll_ctl(): Failed to add to epoll afd\n");
+	/* polling initialize for modules */
+	poll_init();
 
 	/* main loop */
-	uint64_t tcnt;
-	while ((nfd = epoll_wait(epfd, events, MAX_EVENTS, -1)) != -1) {
-		int need_render = 0;
-		for (i = 0; i < nfd; i++) {
-			if (events[i].data.fd == bar.fd) {
-				/* for BSPWM */
-				if ((len = recv(bar.fd, buf, sizeof(buf) - 1, 0)) > 0) {
-					buf[len] = '\0';
-					if (buf[0] == '\x07') {
-						fprintf(stderr, "bspwm: %s", buf + 1);
-						goto CLEANUP;
-					}
-					bspwmbar_parse(&bar, buf);
-					if ((win = get_active_window(bar.dpy, bar.scr)))
-						XChangeWindowAttributes(bar.dpy, win, CWEventMask,
-						                        &attrs);
-					need_render = 1;
-				}
-			} else if (events[i].data.fd == xfd) {
-				/* for X11 events */
-				while (XPending(bar.dpy)) {
-					XNextEvent(bar.dpy, &event);
-					switch (event.type) {
-					case ButtonPress:
-						for (int j = 0; j < bar.nlabel; j++) {
-							if (!bar.labels[j].module->handler)
-								continue;
-							if (bar.labels[j].x < event.xbutton.x &&
-							    event.xbutton.x < bar.labels[j].x +
-							    bar.labels[j].width) {
-								bar.labels[j].module->handler(event);
-								need_render = 1;
-								break;
-							}
-						}
-						break;
-					case PropertyNotify:
-						if (event.xproperty.atom == xembed_info)
-							systray_handle(&tray, event);
-						else if (event.xproperty.atom == filter)
-							need_render = 1;
-						break;
-					case ClientMessage:
-						systray_handle(&tray, event);
-						need_render = 1;
-						break;
-					case DestroyNotify:
-						systray_remove_item(&tray, event.xdestroywindow.window);
-						need_render = 1;
-						break;
-					}
-				}
-			} else if (events[i].data.fd == afd) {
-				int res = alsa_need_update();
-				if (res == -1) {
-					/* reconnect to ALSA */
-					alsa_disconnect();
-					close(afd);
-					afd = alsa_connect();
-					aev.data.fd = afd;
-					if (epoll_ctl(epfd, EPOLL_CTL_ADD, afd, &aev) == -1)
-						die("epoll_ctl(): Failed to add to epoll afd\n");
-				} else if (res == 1) {
-					need_render = 1;
-				}
-			} else if (events[i].data.fd == tfd) {
-				read(tfd, &tcnt, sizeof(uint64_t));
-				need_render = 1;
-			}
-		}
-		if (need_render) {
-			/* force render after interval */
-			timerfd_settime(tfd, 0, &interval, NULL);
-			bspwmbar_render(&bar);
-		}
-	}
-CLEANUP:
+	poll_loop(bspwmbar_render);
 
-	close(tfd);
-	alsa_disconnect();
+	poll_deinit();
 	systray_destroy(&tray);
 	bspwmbar_destroy(&bar);
 	free_colors(dpy, DefaultScreen(dpy));

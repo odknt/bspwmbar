@@ -3,6 +3,8 @@
 #ifndef BSPWMBAR_CONFIG_H_
 #define BSPWMBAR_CONFIG_H_
 
+#include "bspwmbar.h"
+
 #define THERMAL_PATH "/sys/class/thermal/thermal_zone0/temp"
 
 #define FONT_MAXSZ  3
@@ -16,7 +18,7 @@
 #define FGCOLOR    2
 #define LOGOCOLOR  3
 
-static const char *colors[] = {
+const char *colors[] = {
 	"#222222", /* black */
 	"#7f7f7f", /* gray */
 	"#e5e5e5", /* white */
@@ -30,10 +32,16 @@ static const char *colors[] = {
 	"#555555", /* dark gray */
 };
 
-static const char *fontname = "sans-serif:size=10";
+const char *fontname = "sans-serif:size=10";
+
+/* init, deinit, handler for polling fd */
+const Poller pollers[] = {
+	/* init         deinit           handler */
+	{ alsa_connect, alsa_disconnect, alsa_update },
+};
 
 /* for modules on the right (float: right;) */
-static Module modules[] = {
+const Module modules[] = {
 	/* function    argument        event handler */
 	{ datetime,    "%H:%M",        NULL },
 	{ thermal,     THERMAL_PATH,   NULL },

@@ -6,6 +6,15 @@
 #include <unistd.h>
 #include <X11/Xlib.h>
 
+#include "util.h"
+
+typedef enum {
+	PR_NOOP   =  0,
+	PR_UPDATE,
+	PR_REINIT,
+	PR_FAILED
+} PollResult;
+
 typedef struct {
 	double user;
 	double nice;
@@ -22,13 +31,6 @@ typedef struct {
 	size_t total;
 	size_t available;
 } MemInfo;
-
-typedef struct {
-	long volume;
-	int  unmuted;
-	long max, min;
-	long oneper;
-} AlsaInfo;
 
 typedef struct {
 	unsigned long version;
@@ -48,14 +50,29 @@ typedef struct {
 	TrayItem *items;
 } TrayWindow;
 
+typedef struct {
+	/* initialize and return fd */
+	int (* init)();
+	/* close fd and cleanup resources */
+	int (* deinit)();
+	/* event handler for fd */
+	PollResult (* handler)(int);
+} Poller;
+
+typedef struct {
+	char *(* func)(const char *);
+	const char *arg;
+	void (* handler)(XEvent);
+} Module;
+
 int cpu_perc(CoreInfo **);
 int mem_perc();
 
 char *filesystem(const char *);
 
 int alsa_connect();
-void alsa_disconnect();
-int alsa_need_update();
+int alsa_disconnect();
+PollResult alsa_update();
 char *thermal(const char *);
 
 char *volume(const char *);
