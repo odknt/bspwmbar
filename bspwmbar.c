@@ -784,6 +784,14 @@ signal_handler(int signum) {
 	}
 }
 
+static int
+dummy_error_handler(Display *dpy, XErrorEvent *err)
+{
+	(void)dpy;
+	(void)err;
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -815,11 +823,15 @@ main(int argc, char *argv[])
 	if (bspwmbar_init(&bar, dpy, DefaultScreen(dpy)))
 		die("bspwmbar_init(): Failed to init bspwmbar\n");
 
+	/* tray initialize */
 	tray.win = bar.xbars[0].win;
 	tray.dpy = dpy;
+	XSetErrorHandler(dummy_error_handler);
 	if (systray_init(&tray))
 		die("systray_init(): Selection already owned by other window\n");
+	XSetErrorHandler(error_handler);
 
+	/* subscribe bspwm report */
 	if (bspwmbar_send(&bar, SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1)
 		die("bspwmbar_send(): Failed to send command to bspwm\n");
 
