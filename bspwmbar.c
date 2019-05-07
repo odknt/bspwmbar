@@ -288,7 +288,7 @@ bspwmbar_getfont(Bspwmbar *bar, FcChar32 rune)
 
 	/* find font when not found */
 	if (i >= nfcache) {
-		if (bar->font.set)
+		if (!bar->font.set)
 			bar->font.set = FcFontSort(0, bar->font.pattern, 1, 0, &result);
 		fsets[0] = bar->font.set;
 
@@ -791,7 +791,7 @@ main(int argc, char *argv[])
 	(void)(argv);
 
 	char buf[1024];
-	Bspwmbar bar;
+	Bspwmbar bar = { 0 };
 	struct epoll_event ev, events[MAX_EVENTS];
 	struct epoll_event xev, aev;
 	Display *dpy;
