@@ -675,7 +675,7 @@ render()
 		}
 	}
 
-	XSync(bar.dpy, bar.scr);
+	XFlush(bar.dpy);
 }
 
 static int
@@ -781,7 +781,7 @@ bspwmbar_init(Display *dpy, int scr)
 		XLowerWindow(dpy, bar.dcs[i].xbar.win);
 		XMapWindow(dpy, bar.dcs[i].xbar.win);
 	}
-	XSync(dpy, 0);
+	XFlush(dpy);
 
 	return 0;
 }
