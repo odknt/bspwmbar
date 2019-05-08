@@ -25,6 +25,7 @@
 #define MAX_EVENTS 10
 
 char buf[1024];
+char *wintitle = NULL;
 
 static char ascii_table[] =
 	" !\"#$%&'()*+,-./0123456789:;<=>?"
@@ -295,25 +296,36 @@ get_window_title(Display *dpy, Window win)
 	return NULL;
 }
 
+static void
+windowtitle_update(Display *dpy, int scr)
+{
+	Window win;
+	if ((win = get_active_window(dpy, scr))) {
+		if (wintitle)
+			XFree(wintitle);
+		wintitle = (char *)get_window_title(dpy, win);
+	} else {
+		/* release wintitle when active window not found */
+		XFree(wintitle);
+		wintitle = NULL;
+	}
+}
+
 void
 windowtitle(DC dc, const char *suffix)
 {
-	char *title = NULL;
-	Window active = get_active_window(bar.dpy, bar.scr);
+	if (!wintitle)
+		return;
 
-	if (active && (title = (char *)get_window_title(bar.dpy, active))) {
-		size_t i = 0;
-		FcChar32 dst;
-		strncpy(buf, title, sizeof(buf));
+	size_t i = 0;
+	FcChar32 dst;
+	strncpy(buf, wintitle, sizeof(buf));
+	for (size_t len = 0; i < strlen(wintitle) && len < TITLE_MAXSZ; len++)
+		i += FcUtf8ToUcs4((FcChar8 *)&wintitle[i], &dst, strlen(wintitle) - i);
+	if (i < strlen(buf))
+		strncpy(&buf[i], suffix, strlen(suffix) + 1);
 
-		for (size_t len = 0; i < strlen(title) && len < TITLE_MAXSZ; len++)
-			i += FcUtf8ToUcs4((FcChar8 *)&title[i], &dst, strlen(title) - i);
-		if (i < strlen(buf))
-			strncpy(&buf[i], suffix, strlen(suffix) + 1);
-
-		drawtext(dc, buf);
-		XFree(title);
-	}
+	drawtext(dc, buf);
 }
 
 static XftFont *
@@ -1038,6 +1050,7 @@ poll_loop(void (* handler)())
 		if (need_render) {
 			/* force render after interval */
 			timerfd_settime(tfd, 0, &interval, NULL);
+			windowtitle_update(bar.dpy, bar.scr);
 			handler();
 		}
 	}
@@ -1080,6 +1093,8 @@ main(int argc, char *argv[])
 	if (!(dpy = XOpenDisplay(NULL)))
 		die("XOpenDisplay(): Failed to open display\n");
 	XSetErrorHandler(error_handler);
+	/* get active widnow title */
+	windowtitle_update(dpy, DefaultScreen(dpy));
 
 	load_colors(dpy, DefaultScreen(dpy));
 
@@ -1122,6 +1137,10 @@ main(int argc, char *argv[])
 	poll_loop(render);
 
 	poll_deinit();
+
+	if (wintitle)
+		XFree(wintitle);
+
 	systray_destroy(&tray);
 	bspwmbar_destroy();
 	free_colors(dpy, DefaultScreen(dpy));
