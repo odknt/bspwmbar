@@ -40,3 +40,10 @@ mem_perc()
 
 	return calc_used(a);
 }
+
+void
+memgraph(DC dc, const char *arg)
+{
+	(void)arg;
+	drawmem(dc, mem_perc());
+}

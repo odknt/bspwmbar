@@ -30,10 +30,10 @@ disk_perc(const char *mpoint)
 	return calc_used(mp);
 }
 
-char *
-filesystem(const char *mpoint)
+void
+filesystem(DC dc, const char *mpoint)
 {
 	int perc = disk_perc(mpoint);
 	sprintf(buf, " %d％", perc);
-	return buf;
+	drawtext(dc, buf);
 }

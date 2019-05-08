@@ -5,7 +5,6 @@
 #include <X11/Xlib.h>
 
 #include "bspwmbar.h"
-#include "util.h"
 
 enum {
 	ALSACTL_GETINFO = 1,
@@ -13,6 +12,13 @@ enum {
 	ALSACTL_VOLUME_UP,
 	ALSACTL_VOLUME_DOWN,
 };
+
+typedef struct {
+	long volume;
+	int  unmuted;
+	long max, min;
+	long oneper;
+} AlsaInfo;
 
 static snd_ctl_t *ctl;
 static int initialized = 0;
@@ -80,12 +86,6 @@ alsa_control(uint8_t ctlno)
 	snd_mixer_close(h);
 }
 
-void
-alsa_update()
-{
-	alsa_control(ALSACTL_GETINFO);
-}
-
 int
 alsa_connect()
 {
@@ -100,43 +100,45 @@ alsa_connect()
 	return pfds[0].fd;
 }
 
-int
-alsa_need_update()
+PollResult
+alsa_update(int fd)
 {
+	(void)fd;
 	snd_ctl_event_t *event;
 
 	snd_ctl_event_alloca(&event);
 	if (snd_ctl_read(ctl, event) < 0)
-		return -1;
+		return PR_REINIT;
 	if (snd_ctl_event_get_type(event) != SND_CTL_EVENT_ELEM)
-		return 0;
+		return PR_NOOP;
 
 	unsigned int mask = snd_ctl_event_elem_get_mask(event);
 
 	if (!(mask & SND_CTL_EVENT_MASK_VALUE))
-		return 0;
+		return PR_NOOP;
 
-	alsa_update();
-	return 1;
+	alsa_control(ALSACTL_GETINFO);
+
+	return PR_UPDATE;
+}
+
+int
+alsa_disconnect()
+{
+	return snd_ctl_close(ctl);
 }
 
 void
-alsa_disconnect()
-{
-	snd_ctl_close(ctl);
-}
-
-char *
-volume(const char *arg)
+volume(DC dc, const char *arg)
 {
 	(void)arg;
 
 	if (!info.volume)
-		alsa_update();
+		alsa_control(ALSACTL_GETINFO);
 
 	const char *mark = (info.unmuted) ? "墳" : "婢";
 	sprintf(buf, "%s %.0lf％", mark, (double)info.volume / info.max * 100);
-	return buf;
+	drawtext(dc, buf);
 }
 
 void
