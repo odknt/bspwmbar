@@ -97,6 +97,9 @@ typedef struct _DC {
 	GC gc;
 	DrawAlign align;
 	int x;
+
+	Label labels[LENGTH(modules)];
+	int nlabel;
 } DrawCtx;
 
 typedef struct {
@@ -107,9 +110,6 @@ typedef struct {
 	XFont font;
 	DrawCtx *dcs;
 	int ndc;
-
-	Label labels[LENGTH(modules)];
-	int nlabel;
 } Bspwmbar;
 
 static Bspwmbar bar;
@@ -616,10 +616,10 @@ render_label(DrawCtx *dc)
 {
 	int x = 0, width = 0, pad = 0;
 
-	for (int j = 0; j < bar.nlabel; j++) {
+	for (int j = 0; j < dc->nlabel; j++) {
 		x = dc->x; width = 0; pad = 0;
 
-		bar.labels[j].module->func(dc, bar.labels[j].module->arg);
+		dc->labels[j].module->func(dc, dc->labels[j].module->arg);
 		switch ((int)dc->align) {
 		case DA_LEFT:
 			width = dc->x - x;
@@ -635,8 +635,8 @@ render_label(DrawCtx *dc)
 			width += celwidth;
 			x = dc->x + pad;
 		}
-		bar.labels[j].width = width;
-		bar.labels[j].x = x;
+		dc->labels[j].width = width;
+		dc->labels[j].x = x;
 	}
 }
 
@@ -738,7 +738,7 @@ bspwmbar_init(Display *dpy, int scr)
 	/* get monitors */
 	xrr_mon = XRRGetMonitors(dpy, RootWindow(dpy, scr), 1,
                              &nmon);
-	bar.dcs = (DrawCtx *)malloc(sizeof(DrawCtx) * nmon);
+	bar.dcs = (DrawCtx *)calloc(sizeof(DrawCtx), nmon);
 	bar.ndc = nmon;
 
 	/* create window per monitor */
@@ -764,11 +764,6 @@ bspwmbar_init(Display *dpy, int scr)
 	bar.dpy = dpy;
 	bar.scr = scr;
 
-	/* init labels */
-	bar.nlabel = LENGTH(modules);
-	for (i = 0; i < bar.nlabel; i++)
-		bar.labels[i].module = &modules[i];
-
 	loadfonts(fontname);
 	getdrawwidth(ascii_table, &extents);
 
@@ -780,6 +775,11 @@ bspwmbar_init(Display *dpy, int scr)
 		XClearWindow(dpy, bar.dcs[i].xbar.win);
 		XLowerWindow(dpy, bar.dcs[i].xbar.win);
 		XMapWindow(dpy, bar.dcs[i].xbar.win);
+
+		/* init labels */
+		bar.dcs[i].nlabel = LENGTH(modules);
+		for (j = 0; j < bar.dcs[i].nlabel; j++)
+			bar.dcs[i].labels[j].module = &modules[j];
 	}
 	XFlush(dpy);
 
@@ -953,19 +953,27 @@ xev_handle()
 {
 	XEvent event;
 	PollResult res = PR_NOOP;
+	DrawCtx *dctx;
 
 	/* for X11 events */
 	while (XPending(bar.dpy)) {
 		XNextEvent(bar.dpy, &event);
 		switch (event.type) {
 		case ButtonPress:
-			for (int j = 0; j < bar.nlabel; j++) {
-				if (!bar.labels[j].module->handler)
+			dctx = NULL;
+			for (int j = 0; j < bar.ndc; j++)
+				if (bar.dcs[j].xbar.win == event.xbutton.window)
+					dctx = &bar.dcs[j];
+			if (!dctx)
+				break;
+			/* handle evnent */
+			for (int j = 0; j < dctx->nlabel; j++) {
+				if (!dctx->labels[j].module->handler)
 					continue;
-				if (bar.labels[j].x < event.xbutton.x &&
-				    event.xbutton.x < bar.labels[j].x +
-				    bar.labels[j].width) {
-					bar.labels[j].module->handler(event);
+				if (dctx->labels[j].x < event.xbutton.x &&
+				    event.xbutton.x < dctx->labels[j].x +
+				    dctx->labels[j].width) {
+					dctx->labels[j].module->handler(event);
 					res = PR_UPDATE;
 					break;
 				}
