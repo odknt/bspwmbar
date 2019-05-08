@@ -386,7 +386,7 @@ getfont(FcChar32 rune)
 	return fcaches[i];
 }
 
-static void
+static int
 loadfonts(const char *patstr)
 {
 	FcPattern *pat = FcNameParse((FcChar8 *)patstr);
@@ -399,18 +399,22 @@ loadfonts(const char *patstr)
 	FcResult result;
 	FcPattern *match = FcFontMatch(NULL, pat, &result);
 	if (!match) {
-		FcPatternDestroy(match);
-		die("loadfonts(): failed parse pattern: %s\n", patstr);
+		fprintf(stderr, "loadfonts(): failed parse pattern: %s\n", patstr);
+		FcPatternDestroy(pat);
+		return 1;
 	}
 
 	if (!(bar.font.base = XftFontOpenPattern(bar.dpy, match))) {
+		die("loadfonts(): failed open font: %s\n", patstr);
 		FcPatternDestroy(pat);
 		FcPatternDestroy(match);
-		die("loadfonts(): failed open font: %s\n", patstr);
+		return 1;
 	}
+
 	FcPatternDestroy(match);
 
 	bar.font.pattern = pat;
+	return 0;
 }
 
 int
@@ -776,7 +780,8 @@ bspwmbar_init(Display *dpy, int scr)
 	bar.dpy = dpy;
 	bar.scr = scr;
 
-	loadfonts(fontname);
+	if (loadfonts(fontname))
+		return 1;
 	getdrawwidth(ascii_table, &extents);
 
 	bar.gc = XCreateGC(dpy, RootWindow(dpy, scr), GCGraphicsExposures, &gcv);
@@ -1145,6 +1150,7 @@ main(int argc, char *argv[])
 	systray_destroy(&tray);
 	bspwmbar_destroy();
 	free_colors(dpy, DefaultScreen(dpy));
+	FcFini();
 
 	return 0;
 }
