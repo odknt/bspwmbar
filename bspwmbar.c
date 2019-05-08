@@ -807,7 +807,8 @@ bspwmbar_destroy()
 
 	XftFontClose(bar.dpy, bar.font.base);
 	FcPatternDestroy(bar.font.pattern);
-	FcFontSetDestroy(bar.font.set);
+	if (bar.font.set)
+		FcFontSetDestroy(bar.font.set);
 	for (i = 0; i < nfcache; i++)
 		XftFontClose(bar.dpy, fcaches[i]);
 	free(fcaches);
