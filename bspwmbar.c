@@ -587,12 +587,16 @@ bspwm_parse(char *report)
 				curmon->workspaces[nws - 1].state = ws_state(tok);
 			i = j;
 			break;
+		case 'L':
 		case 'T':
-			i++; // skip next char.
+			i++; /* skip next char. */
 			break;
 		case 'G':
 			if (curmon)
 				curmon->nworkspaces = nws;
+			/* skip current node flags. */
+			while (report[i + 1] != ':' && report[i + 1] != '\n')
+				i++;
 			break;
 		}
 	}
