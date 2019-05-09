@@ -858,6 +858,25 @@ workspace(DC dc, const char *args)
 	drawspace(dc, celwidth);
 }
 
+void
+systray(DC dc, const char *arg)
+{
+	(void)arg;
+	DrawCtx *dctx = (DrawCtx *)dc;
+	TrayItem *item = tray.items;
+	drawspace(dc, celwidth);
+	for (; item; item = item->next) {
+		if (!item->info.flags)
+			continue;
+		dctx->x -= TRAY_ICONSZ;
+		XMoveResizeWindow(tray.dpy, item->win, dctx->x,
+		                  (BAR_HEIGHT - TRAY_ICONSZ) / 2,
+		                  TRAY_ICONSZ, TRAY_ICONSZ);
+		dctx->x -= celwidth;
+	}
+	drawspace(dc, celwidth);
+}
+
 static void
 polling_stop()
 {
@@ -1150,7 +1169,6 @@ main(int argc, char *argv[])
 	systray_destroy(&tray);
 	bspwmbar_destroy();
 	free_colors(dpy, DefaultScreen(dpy));
-	FcFini();
 
 	return 0;
 }
