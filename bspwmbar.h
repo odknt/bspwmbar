@@ -107,5 +107,6 @@ void volume(DC, const char *);
 void datetime(DC, const char *);
 void cpugraph(DC, const char *);
 void memgraph(DC, const char *);
+void systray(DC, const char *);
 
 #endif
