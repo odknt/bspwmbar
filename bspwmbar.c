@@ -683,19 +683,6 @@ render()
 		/* render modules */
 		dc->x += celwidth;
 		render_label(dc);
-
-		/* render tray items */
-		if (xw->win == tray.win) {
-			dc->x -= celwidth;
-			TrayItem *item = tray.items;
-			for (; item; item = item->next) {
-				if (!item->info.flags)
-					continue;
-				dc->x -= 16;
-				XMoveResizeWindow(tray.dpy, item->win, dc->x, 4, 16, 16);
-				dc->x -= celwidth;
-			}
-		}
 	}
 
 	XFlush(bar.dpy);
@@ -870,16 +857,19 @@ systray(DC dc, const char *arg)
 {
 	(void)arg;
 	DrawCtx *dctx = (DrawCtx *)dc;
-	TrayItem *item = tray.items;
+	if (tray.win != dctx->xbar.win)
+		return;
+
 	drawspace(dc, celwidth);
+	TrayItem *item = tray.items;
 	for (; item; item = item->next) {
 		if (!item->info.flags)
 			continue;
-		dctx->x -= TRAY_ICONSZ;
+		drawspace(dc, TRAY_ICONSZ);
 		XMoveResizeWindow(tray.dpy, item->win, dctx->x,
 		                  (BAR_HEIGHT - TRAY_ICONSZ) / 2,
 		                  TRAY_ICONSZ, TRAY_ICONSZ);
-		dctx->x -= celwidth;
+		drawspace(dc, celwidth);
 	}
 	drawspace(dc, celwidth);
 }
