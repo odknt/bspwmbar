@@ -21,9 +21,8 @@ A lightweight status bar for bspwm.
 - [x] CPU usage per core
 - [x] Implements clickable label
 - [x] System Tray support
-- [ ] Pulseaudio support
-- [ ] GitHub notification
-- [ ] Refactor code
+- [ ] Pulseaudio support (just enough only ALSA support?)
+- [x] Refactor code
 - [ ] Decrease memory usage
 - [ ] BSD support
 
