@@ -3,7 +3,7 @@
 include config.mk
 
 MODSOBJ = $(addsuffix .o,$(MODS))
-OBJ     = bspwmbar.o util.o $(MODSOBJ)
+OBJ     = bspwmbar.o util.o systray.o $(MODSOBJ)
 
 BINPREFIX=$(PREFIX)/bin
 
@@ -27,14 +27,12 @@ clean:
 	rm -f bspwmar $(OBJ)
 .PHONY: clean
 
-optimized: CFLAGS+= -Os -DNDEBUG
-optimized: LDFLAGS+= -s
-optimized: bspwmbar
+optimized:
+	make bspwmbar CFLAGS="$(RCFLAGS)" LDFLAGS="$(RLDFLAGS)"
 .PHONY: optimized
 
-debug: CFLAGS+= -fsanitize=address -fno-omit-frame-pointer -g
-debug: LDFLAGS+= -fsanitize=address
-debug: clean bspwmbar
+debug: clean
+	make bspwmbar CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)"
 .PHONY: debug
 
 run: bspwmbar
