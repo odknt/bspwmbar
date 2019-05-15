@@ -1,10 +1,11 @@
 .POSIX:
 
-OBJ = bspwmbar.o util.o cpu.o memory.o disk.o alsa.o thermal.o datetime.o systray.o
+include config.mk
+
+MODSOBJ = $(addsuffix .o,$(MODS))
+OBJ     = bspwmbar.o util.o $(MODSOBJ)
 
 BINPREFIX=$(PREFIX)/bin
-
-include config.mk
 
 all: optimized
 
