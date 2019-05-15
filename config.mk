@@ -1,11 +1,15 @@
-VERSION ?= 0
-
 PREFIX    ?= /usr/local
 DESTDIR   ?=
 MANPREFIX ?= $(PREFIX)/share/man
 
-CFLAGS  += -std=c99 -pedantic -Wall -Wextra -I/usr/X11R6/include -I/usr/X11R6/include/freetype2
-LDFLAGS += -L/usr/X11R6/lib
-LDLIBS  += -lX11 -lfontconfig -lXft -lXrandr -lasound
+PKG_CONFIG ?= pkg-config
+
+DEPENDS= x11 xft xrandr fontconfig alsa
+
+INCS = $(shell $(PKG_CONFIG) --cflags $(DEPENDS))
+LIBS = $(shell $(PKG_CONFIG) --libs $(DEPENDS))
+
+CFLAGS  += $(INCS) -std=c99 -pedantic -Wall -Wextra
+LDFLAGS += $(LIBS)
 
 CC ?= cc

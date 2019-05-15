@@ -2,6 +2,9 @@
 
 #define _XOPEN_SOURCE 700
 
+#ifdef __linux
+# include <alloca.h>
+#endif
 #include <X11/Xatom.h>
 #include <X11/Xft/Xft.h>
 #include <X11/Xproto.h>
