@@ -43,6 +43,7 @@ typedef struct _TrayItem {
 	struct _TrayItem *next;
 	Window win;
 	XEmbedInfo info;
+	int x;
 } TrayItem;
 
 typedef struct {

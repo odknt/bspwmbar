@@ -868,9 +868,12 @@ systray(DC dc, const char *arg)
 		if (!item->info.flags)
 			continue;
 		drawspace(dc, TRAY_ICONSZ);
-		XMoveResizeWindow(tray.dpy, item->win, dctx->x,
-		                  (BAR_HEIGHT - TRAY_ICONSZ) / 2,
-		                  TRAY_ICONSZ, TRAY_ICONSZ);
+		if (item->x != dctx->x) {
+			item->x = dctx->x;
+			XMoveResizeWindow(tray.dpy, item->win, item->x,
+			                  (BAR_HEIGHT - TRAY_ICONSZ) / 2, TRAY_ICONSZ,
+			                  TRAY_ICONSZ);
+		}
 		drawspace(dc, celwidth);
 	}
 	drawspace(dc, celwidth);
@@ -1016,10 +1019,12 @@ xev_handle()
 			}
 			break;
 		case PropertyNotify:
-			if (event.xproperty.atom == xembed_info)
+			if (event.xproperty.atom == xembed_info) {
 				systray_handle(&tray, event);
-			else if (event.xproperty.atom == filter)
+			} else if (event.xproperty.atom == filter) {
+				windowtitle_update(bar.dpy, bar.scr);
 				res = PR_UPDATE;
+			}
 			break;
 		case ClientMessage:
 			systray_handle(&tray, event);
