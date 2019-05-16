@@ -8,10 +8,10 @@ DEPS ?= x11 xft xrandr xext fontconfig alsa
 MODS ?= cpu memory disk thermal datetime alsa
 
 INCS = `$(PKG_CONFIG) --cflags $(DEPS)`
-LIBS = `$(PKG_CONFIG) --libs $(DEPS)`
+LDLIBS = `$(PKG_CONFIG) --libs $(DEPS)`
 
 CFLAGS  += $(INCS) -std=c99 -pedantic -Wall -Wextra
-LDFLAGS += $(LIBS)
+LDFLAGS += $(LDLIBS)
 
 # debug flags
 DCFLAGS  = $(CFLAGS) -fsanitize=address -fno-omit-frame-pointer -g
