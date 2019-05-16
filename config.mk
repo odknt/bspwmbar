@@ -4,7 +4,7 @@ MANPREFIX ?= $(PREFIX)/share/man
 
 PKG_CONFIG ?= pkg-config
 
-DEPS ?= x11 xft xrandr fontconfig alsa
+DEPS ?= x11 xft xrandr xext fontconfig alsa
 MODS ?= cpu memory disk thermal datetime alsa
 
 INCS = `$(PKG_CONFIG) --cflags $(DEPS)`
