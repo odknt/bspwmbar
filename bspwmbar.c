@@ -9,6 +9,7 @@
 #include <X11/Xft/Xft.h>
 #include <X11/Xproto.h>
 #include <X11/extensions/Xrandr.h>
+#include <X11/extensions/Xdbe.h>
 #include <locale.h>
 #include <signal.h>
 #include <stdint.h>
@@ -92,15 +93,17 @@ typedef struct {
 
 typedef struct {
 	Window win;
-	XftDraw *draw;
 	Monitor monitor;
 
 	int x, y, width, height;
 } BarWindow;
 
 typedef struct _DC {
+	XdbeSwapInfo swapinfo;
 	BarWindow xbar;
 	GC gc;
+	XftDraw *draw;
+	Drawable buf;
 	DrawAlign align;
 	int x;
 
@@ -112,7 +115,6 @@ typedef struct {
 	int fd;
 	Display *dpy;
 	int scr;
-	GC gc;
 	XFont font;
 	DrawCtx *dcs;
 	int ndc;
@@ -125,11 +127,13 @@ static TrayWindow tray;
 static Atom filter;
 static Atom xembed_info;
 
+static XVisualInfo *visinfo;
 static XftColor cols[LENGTH(colors)];
 static XftFont **fcaches;
 static int nfcache = 0;
 static int fcachecap = 0;
 static int celwidth = 0;
+static int xdbe_support = 0;
 
 static int epfd = 0;
 static struct epoll_event events[MAX_EVENTS];
@@ -227,21 +231,53 @@ set_window_prop(Display *dpy, Window win, Atom type, char *property, int mode,
 	                nvalue);
 }
 
-static void
-barwindow_init(Display *dpy, int scr, int x, int y, int width, int height,
-               BarWindow *xw)
+XVisualInfo *
+get_visualinfo(Display *dpy)
 {
+	if (visinfo)
+		return visinfo;
+
+	int nscreen = 1;
+	Drawable screens[] = { DefaultRootWindow(dpy) };
+	XdbeScreenVisualInfo *info = XdbeGetVisualInfo(dpy, screens, &nscreen);
+	if (!info || nscreen < 1 || info->count < 1)
+		die("XdbeScreenVisualInfo(): does not supported\n");
+
+	XVisualInfo vistmpl;
+	vistmpl.visualid = info->visinfo[0].visual;
+	vistmpl.screen = 0;
+	vistmpl.depth = info->visinfo[0].depth;
+	XdbeFreeVisualInfo(info);
+
+	int nmatch;
+	int mask = VisualIDMask | VisualScreenMask | VisualDepthMask;
+	visinfo = XGetVisualInfo(dpy, mask, &vistmpl, &nmatch);
+
+	if (!visinfo || nmatch < 1)
+		die("couldn't match a Visual with double buffering\n");
+	return visinfo;
+}
+
+static void
+drawctx_init(DrawCtx *dc, Display *dpy, int scr, int x, int y, int width,
+             int height)
+{
+	XGCValues gcv = { 0 };
 	XSetWindowAttributes wattrs;
 	XClassHint *hint;
+	BarWindow *xw = &dc->xbar;
 
 	wattrs.background_pixel = cols[BGCOLOR].pixel;
 	wattrs.event_mask = NoEventMask;
 
+	Visual *vis;
+	if (xdbe_support)
+		vis = get_visualinfo(dpy)->visual;
+	else
+		vis = DefaultVisual(dpy, scr);
 	xw->win = XCreateWindow(dpy, RootWindow(dpy, scr), x, y, width, height, 0,
-	                        CopyFromParent, CopyFromParent,
-	                        CopyFromParent,
-	                        CWBackPixel | CWEventMask,
-	                        &wattrs);
+	                        CopyFromParent, CopyFromParent, vis,
+	                        CWBackPixel | CWEventMask, &wattrs);
 
 	/* set window type */
 	set_window_prop(dpy, xw->win, XA_ATOM, "_NET_WM_STATE", PropModeReplace,
@@ -260,9 +296,15 @@ barwindow_init(Display *dpy, int scr, int x, int y, int width, int height,
 	set_window_prop(dpy, xw->win, XA_CARDINAL, "_NET_WM_STRUT_PARTIAL",
 	                PropModeReplace, strut_partial, 12);
 
-	/* create draw context */
-	xw->draw = XftDrawCreate(dpy, xw->win, DefaultVisual(dpy, scr),
-	                         DefaultColormap(dpy, scr));
+	/* create graphic context */
+	if (xdbe_support)
+		dc->buf = XdbeAllocateBackBufferName(dpy, xw->win, XdbeBackground);
+	else
+		dc->buf = xw->win;
+	dc->gc = XCreateGC(dpy, dc->buf, GCGraphicsExposures, &gcv);
+	dc->draw = XftDrawCreate(dpy, dc->buf, vis, DefaultColormap(dpy, scr));
+	dc->swapinfo.swap_window = dc->xbar.win;
+	dc->swapinfo.swap_action = XdbeBackground;
 
 	hint = XAllocClassHint();
 	hint->res_class = "Bspwmbar";
@@ -468,9 +510,8 @@ drawstring(DC dc, XftColor *color, const char *str)
 		font = getfont(rune);
 		int y = (BAR_HEIGHT - (font->ascent + font->descent) / 2);
 		XftTextExtentsUtf8(bar.dpy, font, (FcChar8 *)&str[i], len, &extents);
-		XftDrawStringUtf8(dctx->xbar.draw, color, font,
-		                  dctx->x + width + extents.x, y,
-		                  (FcChar8 *)&str[i], len);
+		XftDrawStringUtf8(dctx->draw, color, font, dctx->x + width + extents.x,
+		                  y, (FcChar8 *)&str[i], len);
 		width += extents.x + extents.xOff;
 		i += len;
 	}
@@ -510,11 +551,11 @@ drawcpu(DC dc, CoreInfo *a, int nproc)
 			fg = cols[7];
 		}
 		XSetForeground(bar.dpy, dctx->gc, cols[ALTBGCOLOR].pixel);
-		XFillRectangle(bar.dpy, dctx->xbar.win, dctx->gc, dctx->x - width, basey, width,
-		               maxh);
+		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - width,
+		               basey, width, maxh);
 
 		XSetForeground(bar.dpy, dctx->gc, fg.pixel);
-		XFillRectangle(bar.dpy, dctx->xbar.win, dctx->gc, dctx->x - width,
+		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - width,
 		               basey + (maxh - height), width, height);
 		dctx->x -= width + 1;
 	}
@@ -543,7 +584,7 @@ drawmem(DC dc, size_t memused)
 			fg = cols[7];
 
 		XSetForeground(bar.dpy, dctx->gc, fg.pixel);
-		XFillRectangle(bar.dpy, dctx->xbar.win, dctx->gc, dctx->x - width,
+		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - width,
 		               basey, width, maxh);
 		dctx->x -= width + 1;
 	}
@@ -685,8 +726,11 @@ render()
 		/* render modules */
 		dc->x += celwidth;
 		render_label(dc);
-	}
 
+		/* swap buffer */
+		if (xdbe_support)
+			XdbeSwapBuffers(bar.dpy, &bar.dcs[i].swapinfo, 1);
+	}
 	XFlush(bar.dpy);
 }
 
@@ -739,8 +783,8 @@ bspwmbar_init(Display *dpy, int scr)
 	XRRScreenResources *xrr_res;
 	XRRMonitorInfo *xrr_mon;
 	XRROutputInfo *xrr_out;
-	XGCValues gcv = { 0 };
 	XGlyphInfo extents = { 0 };
+	Window root = RootWindow(dpy, scr);
 	int i, j, nmon;
 
 	/* connect bspwm socket */
@@ -748,21 +792,20 @@ bspwmbar_init(Display *dpy, int scr)
 		die("bspwm_connect(): Failed to connect to the socket\n");
 
 	/* get monitors */
-	xrr_mon = XRRGetMonitors(dpy, RootWindow(dpy, scr), 1,
-                             &nmon);
+	xrr_mon = XRRGetMonitors(dpy, root, 1, &nmon);
 	bar.dcs = (DrawCtx *)calloc(sizeof(DrawCtx), nmon);
 	bar.ndc = nmon;
 
 	/* create window per monitor */
-	xrr_res = XRRGetScreenResources(dpy, RootWindow(dpy, scr));
+	xrr_res = XRRGetScreenResources(dpy, root);
 	for (i = 0; i < xrr_res->noutput; i++) {
 		xrr_out = XRRGetOutputInfo(dpy, xrr_res, xrr_res->outputs[i]);
 		if (xrr_out->connection == RR_Connected) {
 			for (j = 0; j < nmon; j++) {
 				if (xrr_res->outputs[i] != xrr_mon[j].outputs[0])
 					continue;
-				barwindow_init(dpy, scr, xrr_mon[j].x, 0, xrr_mon[j].width,
-				               BAR_HEIGHT, &bar.dcs[j].xbar);
+				drawctx_init(&bar.dcs[j], dpy, scr, xrr_mon[j].x, 0,
+				             xrr_mon[j].width, BAR_HEIGHT);
 				strncpy(bar.dcs[j].xbar.monitor.name, xrr_out->name,
 				        NAME_MAXSZ);
 			}
@@ -780,11 +823,8 @@ bspwmbar_init(Display *dpy, int scr)
 		return 1;
 	getdrawwidth(ascii_table, &extents);
 
-	bar.gc = XCreateGC(dpy, RootWindow(dpy, scr), GCGraphicsExposures, &gcv);
-
 	/* clear background */
 	for (i = 0; i < bar.ndc; i++) {
-		bar.dcs[i].gc = bar.gc;
 		XClearWindow(dpy, bar.dcs[i].xbar.win);
 		XLowerWindow(dpy, bar.dcs[i].xbar.win);
 		XMapWindow(dpy, bar.dcs[i].xbar.win);
@@ -815,11 +855,13 @@ bspwmbar_destroy()
 	free(fcaches);
 
 	for (i = 0; i < bar.ndc; i++) {
-		XftDrawDestroy(bar.dcs[i].xbar.draw);
+		XFreeGC(bar.dpy, bar.dcs[i].gc);
+		XftDrawDestroy(bar.dcs[i].draw);
 		XDestroyWindow(bar.dpy, bar.dcs[i].xbar.win);
 	}
 	free(bar.dcs);
-	XFreeGC(bar.dpy, bar.gc);
+	if (xdbe_support)
+		free(visinfo);
 }
 
 static int
@@ -834,18 +876,17 @@ workspace(DC dc, const char *args)
 	(void)args;
 	XftColor col;
 	DrawCtx *dctx = (DrawCtx *)dc;
-	BarWindow *xw = (BarWindow *)dc;
 	const char *ws;
-	int cur, max = xw->monitor.nworkspaces;
+	int cur, max = dctx->xbar.monitor.nworkspaces;
 
 	drawspace(dc, celwidth);
 	for (int i = 0, j = max - 1; i < max; i++, j--) {
 		cur = (dctx->align == DA_RIGHT) ? j : i;
 		drawspace(dc, celwidth / 2);
-		ws = (xw->monitor.workspaces[cur].state & STATE_ACTIVE)
+		ws = (dctx->xbar.monitor.workspaces[cur].state & STATE_ACTIVE)
 		     ? workspace_chars[0]
 		     : workspace_chars[1];
-		col = (xw->monitor.workspaces[cur].state == STATE_FREE)
+		col = (dctx->xbar.monitor.workspaces[cur].state == STATE_FREE)
 		      ? cols[ALTFGCOLOR]
 		      : cols[FGCOLOR];
 		drawstring(dc, &col, ws);
@@ -1122,6 +1163,15 @@ main(int argc, char *argv[])
 	if (!(dpy = XOpenDisplay(NULL)))
 		die("XOpenDisplay(): Failed to open display\n");
 	XSetErrorHandler(error_handler);
+
+	/* Xdbe initialize */
+	int major, minor;
+	if (XdbeQueryExtension(dpy, &major, &minor))
+		xdbe_support = 1;
+#ifdef DISABLE_XDBE
+	xdbe_support = 0;
+#endif
+
 	/* get active widnow title */
 	windowtitle_update(dpy, DefaultScreen(dpy));
 
