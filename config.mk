@@ -19,5 +19,3 @@ DLDFLAGS = $(LDFLAGS) -fsanitize=address
 # release flags
 RCFLAGS  = $(CFLAGS) -Os -DNDEBUG
 RLDFLAGS = $(LDFLAGS) -s
-
-CC ?= cc
