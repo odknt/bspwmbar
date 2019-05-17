@@ -1,4 +1,8 @@
-#include <alloca.h>
+#if defined(__linux)
+# include <alloca.h>
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
+# define __BSD_VISIBLE 1
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
