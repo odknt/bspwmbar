@@ -26,6 +26,7 @@ num_procs()
 
 #if defined(__linux)
 	nproc = get_nprocs();
+	return nproc;
 #elif defined(__OpenBSD__)
 	int mibnproc[2] = { CTL_HW, HW_NCPU };
 	size_t len = sizeof(nproc);

@@ -990,7 +990,7 @@ poll_del(PollFD *pollfd)
 		pollfd->deinit();
 	if (pollfd->fd) {
 #if defined(__linux)
-		epoll_ctl(epfd, EPOLL_CTL_DEL, pollfd->fd, NULL);
+		epoll_ctl(pfd, EPOLL_CTL_DEL, pollfd->fd, NULL);
 #elif defined(__OpenBSD__)
 		struct kevent ev = { 0 };
 		EV_SET(&ev, pollfd->fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
