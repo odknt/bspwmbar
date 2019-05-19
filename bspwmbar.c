@@ -505,10 +505,10 @@ drawstring(DC dc, XftColor *color, const char *str)
 	if (dctx->align == DA_RIGHT)
 		dctx->x -= getdrawwidth(str, &extents);
 
+	int y = (BAR_HEIGHT - bar.font.base->height) / 2 + bar.font.base->ascent;
 	for (unsigned int i = 0; i < strlen(str); i += len) {
 		int len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
 		font = getfont(rune);
-		int y = (BAR_HEIGHT - (font->ascent + font->descent) / 2);
 		XftTextExtentsUtf8(bar.dpy, font, (FcChar8 *)&str[i], len, &extents);
 		XftDrawStringUtf8(dctx->draw, color, font, dctx->x + width + extents.x,
 		                  y, (FcChar8 *)&str[i], len);
