@@ -18,9 +18,7 @@ case $(uname -s) in
     DLDFLAGS="${DLDFLAGS} -fsanitize=address"
     ;;
   OpenBSD)
-    MODS="${MODS} sndio"
-    RLDFLAGS="${RLDFLAGS} -lsndio"
-    DLDFLAGS="${DLDFLAGS} -lsndio"
+    MODS="${MODS} volume"
     ;;
 esac
 
