@@ -23,6 +23,7 @@ typedef struct {
 static snd_ctl_t *ctl;
 static int initialized = 0;
 static AlsaInfo info = { 0 };
+static PollFD pfd = { 0 };
 
 static void
 get_info(snd_mixer_elem_t *elem)
@@ -129,9 +130,21 @@ alsa_disconnect()
 }
 
 void
+alsa_init()
+{
+	pfd.fd = alsa_connect();
+	pfd.init = alsa_connect;
+	pfd.deinit = alsa_disconnect;
+	pfd.handler = alsa_update;
+	poll_add(&pfd);
+}
+
+void
 volume(DC dc, const char *arg)
 {
 	(void)arg;
+	if (!pfd.fd)
+		alsa_init();
 
 	if (!info.volume)
 		alsa_control(ALSACTL_GETINFO);

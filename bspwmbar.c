@@ -67,11 +67,6 @@ typedef struct {
 } XFont;
 
 typedef struct {
-	int          fd;
-	const Poller *poller;
-} PollFD;
-
-typedef struct {
 	const Module *module;
 
 	int x, width;
@@ -137,7 +132,7 @@ static int xdbe_support = 0;
 
 static int epfd = 0;
 static struct epoll_event events[MAX_EVENTS];
-static PollFD pollfds[LENGTH(pollers)];
+static list_head pollfds;
 
 XftColor *
 getcolor(int index)
@@ -793,7 +788,7 @@ bspwmbar_init(Display *dpy, int scr)
 
 	/* get monitors */
 	xrr_mon = XRRGetMonitors(dpy, root, 1, &nmon);
-	bar.dcs = (DrawCtx *)calloc(sizeof(DrawCtx), nmon);
+	bar.dcs = (DrawCtx *)calloc(nmon, sizeof(DrawCtx));
 	bar.ndc = nmon;
 
 	/* create window per monitor */
@@ -899,13 +894,17 @@ void
 systray(DC dc, const char *arg)
 {
 	(void)arg;
+	if (list_empty(&tray.items))
+		return;
+
 	DrawCtx *dctx = (DrawCtx *)dc;
 	if (tray.win != dctx->xbar.win)
 		return;
 
 	drawspace(dc, celwidth);
-	TrayItem *item = tray.items;
-	for (; item; item = item->next) {
+	list_head *pos;
+	list_for_each(&tray.items, pos) {
+		TrayItem *item = list_entry(pos, TrayItem, head);
 		if (!item->info.flags)
 			continue;
 		drawspace(dc, TRAY_ICONSZ);
@@ -954,7 +953,7 @@ error_handler(Display *dpy, XErrorEvent *err)
 	return 0;
 }
 
-static void
+void
 poll_add(PollFD *pollfd)
 {
 	struct epoll_event ev;
@@ -967,11 +966,11 @@ poll_add(PollFD *pollfd)
 		die("epoll_ctl(): Failed to add to epoll fd\n");
 }
 
-static void
+void
 poll_del(PollFD *pollfd)
 {
-	if (pollfd->poller && pollfd->poller->deinit)
-		pollfd->poller->deinit();
+	if (pollfd->deinit)
+		pollfd->deinit();
 	if (pollfd->fd) {
 		epoll_ctl(epfd, EPOLL_CTL_DEL, pollfd->fd, NULL);
 		close(pollfd->fd);
@@ -981,20 +980,7 @@ poll_del(PollFD *pollfd)
 static void
 poll_init()
 {
-	for (unsigned long i = 0; i < LENGTH(pollers); i++) {
-		pollfds[i].fd = pollers[i].init();
-		pollfds[i].poller = &pollers[i];
-		if (!pollfds[i].fd)
-			die("poll_init(): pollers[%d].init() returns NULL\n", i);
-		poll_add(&pollfds[i]);
-	}
-}
-
-static void
-poll_deinit()
-{
-	for (unsigned long i = 0; i < LENGTH(pollfds); i++)
-		poll_del(&pollfds[i]);
+	list_head_init(&pollfds);
 }
 
 static PollResult
@@ -1092,13 +1078,11 @@ poll_loop(void (* handler)())
 	int tfd = timerfd_create(CLOCK_REALTIME, 0);
 	timerfd_settime(tfd, 0, &interval, NULL);
 
-	Poller poller = { NULL, NULL, timer_reset };
-	PollFD timer = { tfd, &poller };
+	PollFD timer = { tfd, NULL, NULL, timer_reset, { 0 } };
 	poll_add(&timer);
 
 	/* polling X11 event for modules */
-	Poller xpoll = { NULL, NULL, xev_handle };
-	PollFD xfd = { ConnectionNumber(bar.dpy), &xpoll };
+	PollFD xfd = { ConnectionNumber(bar.dpy), NULL, NULL, xev_handle, { 0 } };
 	poll_add(&xfd);
 
 	/* polling fd */
@@ -1106,13 +1090,13 @@ poll_loop(void (* handler)())
 		need_render = 0;
 		for (i = 0; i < nfd; i++) {
 			pollfd = (PollFD *)events[i].data.ptr;
-			switch ((int)pollfd->poller->handler(pollfd->fd)) {
+			switch ((int)pollfd->handler(pollfd->fd)) {
 			case PR_UPDATE:
 				need_render = 1;
 				break;
 			case PR_REINIT:
 				poll_del(pollfd);
-				pollfd->fd = pollfd->poller->init();
+				pollfd->fd = pollfd->init();
 				poll_add(pollfd);
 				break;
 			}
@@ -1197,8 +1181,7 @@ main(int argc, char *argv[])
 		die("epoll_create1(): Failed to create epoll fd\n");
 
 	/* polling bspwm report */
-	Poller bpoll = { NULL, NULL, bspwm_handle };
-	PollFD bfd = { bar.fd, &bpoll };
+	PollFD bfd = { bar.fd, NULL, NULL, bspwm_handle, { 0 } };
 	poll_add(&bfd);
 
 	/* polling X11 event for modules */
@@ -1214,8 +1197,6 @@ main(int argc, char *argv[])
 
 	/* main loop */
 	poll_loop(render);
-
-	poll_deinit();
 
 	if (wintitle)
 		XFree(wintitle);

@@ -35,18 +35,3 @@ pscanf(const char *path, const char *fmt, ...)
 
 	return (n == EOF) ? -1 : n;
 }
-
-const char *
-bprintf(const char *fmt, ...)
-{
-	va_list ap;
-	int ret;
-
-	va_start(ap, fmt);
-	ret = vsnprintf(buf, sizeof(buf), fmt, ap);
-	if ((size_t)ret > sizeof(buf))
-		ret = -1;
-	va_end(ap);
-
-	return (ret < 0) ? NULL : buf;
-}

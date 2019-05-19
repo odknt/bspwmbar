@@ -47,7 +47,7 @@ int
 systray_init(TrayWindow *tray)
 {
 	XSetWindowAttributes wattrs;
-	tray->items = NULL;
+	list_head_init(&tray->items);
 
 	size_t len = strlen(ATOM_SYSTRAY) + sizeof(int) + 1;
 	char *atomstr = (char *)alloca(len);
@@ -71,6 +71,7 @@ systray_init(TrayWindow *tray)
 	ev.xclient.data.l[4] = 0;
 
 	XSendEvent(tray->dpy, tray->win, 0, StructureNotifyMask, &ev);
+
 
 	return 0;
 }
@@ -138,57 +139,38 @@ xembed_getinfo(TrayWindow *tray, Window win, XEmbedInfo *info)
 static TrayItem *
 systray_append_item(TrayWindow *tray, Window win)
 {
-	if (!tray->items) {
-		tray->items = (TrayItem *)calloc(1, sizeof(TrayItem));
-		tray->items->win = win;
-		return tray->items;
-	}
+	TrayItem *item = calloc(1, sizeof(TrayItem));
+	item->win = win;
 
-	TrayItem *item = tray->items;
-	while (item->next)
-		item = item->next;
+	list_add_tail(&tray->items, &item->head);
 
-	item->next = (TrayItem *)calloc(1, sizeof(TrayItem));
-	item->next->win = win;
-	item->next->prev = item;
-
-	return item->next;
+	return item;
 }
 
 static TrayItem *
 systray_find_item(TrayWindow *tray, Window win)
 {
-	TrayItem *item = tray->items;
-	for (; item; item = item->next)
+	list_head *pos;
+	list_for_each(&tray->items, pos) {
+		TrayItem *item = list_entry(pos, TrayItem, head);
 		if (item->win == win)
 			return item;
+	}
 	return NULL;
 }
 
 void
 systray_remove_item(TrayWindow *tray, Window win)
 {
-	TrayItem *item = tray->items;
-
-	for (; item; item = item->next)
-		if (item->win == win)
-			break;
-	if (!item)
-		return;
-
-	if (item->prev)
-		item->prev->next = item->next;
-	if (item->next)
-		item->next->prev = item->prev;
-
-	if (item == tray->items) {
-		if (item->next)
-			tray->items = item->next;
-		else
-			tray->items = NULL;
+	list_head *pos;
+	list_for_each(&tray->items, pos) {
+		TrayItem *item = list_entry(pos, TrayItem, head);
+		if (item->win == win) {
+			list_del(pos);
+			free(item);
+			return;
+		}
 	}
-	if (item)
-		free(item);
 }
 
 int
@@ -245,11 +227,11 @@ systray_destroy(TrayWindow *tray)
 {
 	XSetSelectionOwner(tray->dpy, systray_atom, 0, CurrentTime);
 
-	TrayItem *item = tray->items, *tmp;
-	while (item) {
+	list_head *pos;
+	list_for_each(&tray->items, pos) {
+		TrayItem *item = list_entry(pos, TrayItem, head);
 		xembed_unembed_window(tray, item->win);
-		tmp = item;
-		item = item->next;
-		free(tmp);
+		list_del(pos);
+		free(item);
 	}
 }

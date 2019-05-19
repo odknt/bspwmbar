@@ -38,32 +38,31 @@ typedef struct {
 } XEmbedInfo;
 
 typedef struct _TrayItem {
-	struct _TrayItem *prev;
-	struct _TrayItem *next;
 	Window win;
 	XEmbedInfo info;
 	int x;
+
+	list_head head;
 } TrayItem;
 
 typedef struct {
 	Display *dpy;
 	Window win;
-	TrayItem *items;
+	list_head items;
 } TrayWindow;
 
-typedef struct {
-	/* initialize and return fd */
-	int (* init)();
-	/* close fd and cleanup resources */
-	int (* deinit)();
-	/* event handler for fd */
-	PollResult (* handler)(int);
-} Poller;
-
-struct _DC;
 typedef struct _DC *DC;
 typedef void (* ModuleHandler)(DC, const char *);
 typedef void (* XEventHandler)(XEvent);
+
+typedef struct {
+	int fd;
+	int (* init)(); /* initialize and return fd */
+	int (* deinit)(); /* close fd and cleanup resources */
+	PollResult (* handler)(int); /* event handler for fd */
+
+	list_head head;
+} PollFD;
 
 typedef struct {
 	ModuleHandler func;
@@ -75,6 +74,8 @@ XftColor *getcolor(int);
 void drawtext(DC, const char *);
 void drawcpu(DC, CoreInfo *, int);
 void drawmem(DC, int);
+void poll_add(PollFD *);
+void poll_del(PollFD *);
 
 /* cpu.c */
 int cpu_perc(CoreInfo **);

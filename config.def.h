@@ -40,12 +40,6 @@ const char *colors[] = {
 
 const char *fontname = "sans-serif:size=10";
 
-/* init, deinit, handler for polling fd */
-const Poller pollers[] = {
-	/* init         deinit           handler */
-	{ alsa_connect, alsa_disconnect, alsa_update },
-};
-
 /* for modules on the right (float: right;) */
 const Module modules[] = {
 	/* function    argument        event handler */
