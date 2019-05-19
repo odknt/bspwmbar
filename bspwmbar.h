@@ -3,7 +3,6 @@
 #ifndef BSPWMBAR_H_
 #define BSPWMBAR_H_
 
-#include <unistd.h>
 #include <X11/Xlib.h>
 #include <X11/Xft/Xft.h>
 
@@ -75,7 +74,7 @@ typedef struct {
 XftColor *getcolor(int);
 void drawtext(DC, const char *);
 void drawcpu(DC, CoreInfo *, int);
-void drawmem(DC, size_t);
+void drawmem(DC, int);
 
 /* cpu.c */
 int cpu_perc(CoreInfo **);

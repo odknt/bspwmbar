@@ -564,7 +564,7 @@ drawcpu(DC dc, CoreInfo *a, int nproc)
 }
 
 void
-drawmem(DC dc, size_t memused)
+drawmem(DC dc, int memused)
 {
 	DrawCtx *dctx = (DrawCtx *)dc;
 	int width = 5;
@@ -572,13 +572,13 @@ drawmem(DC dc, size_t memused)
 	int basey = maxh / 2;
 
 	drawspace(dc, celwidth);
-	for (size_t i = 10; i > 0; i--) {
+	for (int i = 9; i >= 0; i--) {
 		XftColor fg = cols[ALTBGCOLOR];
-		if (i <= 3 && memused >= i * 10)
+		if (i <= 2 && memused >= i * 10)
 			fg = cols[4];
-		else if (i <= 6 && memused >= i * 10)
+		else if (i <= 5 && memused >= i * 10)
 			fg = cols[5];
-		else if (i <= 8 && memused >= i * 10)
+		else if (i <= 7 && memused >= i * 10)
 			fg = cols[6];
 		else if (memused >= 90)
 			fg = cols[7];
