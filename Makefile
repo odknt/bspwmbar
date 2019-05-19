@@ -1,8 +1,10 @@
 .POSIX:
 
-include config.mk
+PREFIX    ?= /usr/local
+DESTDIR   ?=
+MANPREFIX ?= $(PREFIX)/share/man
 
-OBJ = bspwmbar.o util.o systray.o $(MODS)
+OBJ = bspwmbar.o util.o systray.o $(MODS:=.o)
 
 BINPREFIX=$(PREFIX)/bin
 
@@ -27,12 +29,10 @@ clean:
 	rm -f bspwmar $(OBJ)
 .PHONY: clean
 
-optimized:
-	make bspwmbar CFLAGS="$(RCFLAGS) $(CFLAGS)" LDFLAGS="$(RLDFLAGS) $(LDFLAGS)"
+optimized: bspwmbar
 .PHONY: optimized
 
-debug: clean
-	make bspwmbar CFLAGS="$(DCFLAGS) $(CFLAGS)" LDFLAGS="$(DLDFLAGS) $(LDFLAGS)"
+debug: clean bspwmbar
 .PHONY: debug
 
 run: bspwmbar
