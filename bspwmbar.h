@@ -83,12 +83,6 @@ int cpu_perc(CoreInfo **);
 /* mem.c */
 int mem_perc();
 
-/* alsa.c */
-int alsa_connect();
-int alsa_disconnect();
-PollResult alsa_update(int);
-void volume_ev(XEvent);
-
 /* systray.c */
 int systray_init(TrayWindow *);
 void systray_destroy(TrayWindow *);
@@ -97,6 +91,9 @@ int systray_handle(TrayWindow *, XEvent);
 
 /* modules for alignment */
 void float_right(DC, const char *);
+
+/* handler */
+void volume_ev(XEvent);
 
 /* modules */
 void logo(DC, const char *);
