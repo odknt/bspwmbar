@@ -1,20 +1,32 @@
 .POSIX:
 
-include config.mk
-
-MODSOBJ = $(addsuffix .o,$(MODS))
-OBJ     = bspwmbar.o util.o systray.o $(MODSOBJ)
+DESTDIR   ?=
+PREFIX    ?= ${PREFIX}
+MANPREFIX ?= $(PREFIX)/share/man
 
 BINPREFIX=$(PREFIX)/bin
 
-all: optimized
+CFLAGS  ?=${CFLAGS}
+LDFLAGS ?=${LDFLAGS}
+DCDFLAGS =${DCFLAGS}
+DLDFLAGS =${DLDFLAGS}
+DEPCFLAGS=${DEPCFLAGS}
+DEPLIBS  =${DEPLIBS}
+
+MODS=${MODS}
+OBJ = bspwmbar.o util.o systray.o $(MODS:=.o)
 
 bspwmbar: $(OBJ)
+	$(CC) -o $@ $(OBJ) $(CFLAGS) $(DEPCFLAGS) $(DEPLIBS) $(LDFLAGS)
+
+debug:
+	make CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)"
+.PHONY: debug
 
 $(OBJ): config.h util.h bspwmbar.h
 
 .c.o: config.h
-	$(CC) -o $@ -c $(CFLAGS) $<
+	$(CC) -o $@ -c $(CFLAGS) $(DEPCFLAGS) $<
 
 config.h:
 	cp config.def.h $@
@@ -26,14 +38,6 @@ config: config.def.h
 clean:
 	rm -f bspwmar $(OBJ)
 .PHONY: clean
-
-optimized:
-	make bspwmbar CFLAGS="$(RCFLAGS)" LDFLAGS="$(RLDFLAGS)"
-.PHONY: optimized
-
-debug: clean
-	make bspwmbar CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)"
-.PHONY: debug
 
 run: bspwmbar
 	./bspwmbar

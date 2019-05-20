@@ -3,8 +3,13 @@
 #ifndef BSPWMBAR_H_
 #define BSPWMBAR_H_
 
+#include <stdint.h>
 #include <X11/Xlib.h>
 #include <X11/Xft/Xft.h>
+
+#if defined(__OpenBSD__)
+# include <sys/sched.h>
+#endif
 
 #include "util.h"
 
@@ -15,6 +20,7 @@ typedef enum {
 	PR_FAILED
 } PollResult;
 
+#if defined(__linux)
 typedef struct {
 	double user;
 	double nice;
@@ -26,11 +32,23 @@ typedef struct {
 	double sum;
 	double loadavg;
 } CoreInfo;
+#elif defined(__OpenBSD__)
+typedef struct {
+	uintmax_t states[CPUSTATES];
+	uintmax_t sum;
+	uintmax_t used;
+	double loadavg;
+} CoreInfo;
+#endif
 
+#if defined(__linux)
 typedef struct {
 	size_t total;
 	size_t available;
 } MemInfo;
+#elif defined(__OpenBSD__)
+typedef struct uvmexp MemInfo;
+#endif
 
 typedef struct {
 	unsigned long version;

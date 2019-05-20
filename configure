@@ -1,0 +1,59 @@
+#!/bin/sh
+# vim: st=2 sw=2 sts=2 et
+
+PREFIX=/usr/local
+
+PKGCONFIG='pkg-config'
+DEPS='x11 xft xrandr xext fontconfig'
+MODS='cpu memory disk thermal datetime'
+
+# debug flags
+CFLAGS='-Os -DNDEBUG'
+LDFLAGS='-s'
+
+# debug flags
+DCFLAGS='-g'
+DLDFLAGS=''
+
+usage_exit() {
+  echo "usage: ./configure [option]...
+
+    --prefix=<path>     install target prefix
+"
+  exint 1
+}
+
+set_args() {
+  while [ "${1:-}" != "" ]; do
+    case "$1" in
+      "-p" | "--prefix")
+        shift
+        [ -z "${1:-}" ] && usage_exit
+        prefix="${1}"
+        ;;
+    esac
+    shift
+  done
+}
+
+set_args ${@}
+
+case $(uname -s) in
+  Linux)
+    DEPS="${DEPS} alsa"
+    MODS="${MODS} alsa"
+    DCFLAGS="${DCFLAGS} -fsanitize=address -fno-omit-frame-pointer"
+    DLDFLAGS="${DLDFLAGS} -fsanitize=address"
+    ;;
+  OpenBSD)
+    MODS="${MODS} volume"
+    ;;
+esac
+
+DEPCFLAGS="$("${PKGCONFIG}" --cflags "${DEPS}")"
+DEPLIBS="$("${PKGCONFIG}" --libs "${DEPS}")"
+DCFLAGS="${DCFLAGS}"
+DLDFLAGS="${DLDFLAGS}"
+
+export PREFIX CFLAGS LDFLAGS MODS DCFLAGS DLDFLAGS DEPCFLAGS DEPLIBS
+envsubst < Makefile.in > Makefile

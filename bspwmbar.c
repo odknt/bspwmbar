@@ -1,10 +1,18 @@
 /* See LICENSE file for copyright and license details. */
 
-#define _XOPEN_SOURCE 700
-
-#ifdef __linux
+#if defined(__linux)
+# define _XOPEN_SOURCE 700
 # include <alloca.h>
+# include <sys/epoll.h>
+# include <sys/timerfd.h>
+# include <sys/un.h>
+#elif defined(__OpenBSD__)
+# include <sys/types.h>
+# include <sys/event.h>
+# include <sys/time.h>
 #endif
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <X11/Xatom.h>
 #include <X11/Xft/Xft.h>
 #include <X11/Xproto.h>
@@ -16,10 +24,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
-#include <sys/socket.h>
-#include <sys/timerfd.h>
-#include <sys/un.h>
 #include <time.h>
 
 #include "bspwmbar.h"
@@ -130,8 +134,12 @@ static int fcachecap = 0;
 static int celwidth = 0;
 static int xdbe_support = 0;
 
-static int epfd = 0;
+static int pfd = 0;
+#if defined(__linux)
 static struct epoll_event events[MAX_EVENTS];
+#elif defined(__OpenBSD__)
+static struct kevent events[MAX_EVENTS];
+#endif
 static list_head pollfds;
 
 XftColor *
@@ -922,8 +930,8 @@ systray(DC dc, const char *arg)
 static void
 polling_stop()
 {
-	if (epfd > 0)
-		close(epfd);
+	if (pfd > 0)
+		close(pfd);
 }
 
 int
@@ -956,14 +964,23 @@ error_handler(Display *dpy, XErrorEvent *err)
 void
 poll_add(PollFD *pollfd)
 {
+	(void)pollfd;
+#if defined(__linux)
 	struct epoll_event ev;
 
 	ev.events = EPOLLIN;
 	ev.data.fd = pollfd->fd;
 	ev.data.ptr = (void *)pollfd;
 
-	if (epoll_ctl(epfd, EPOLL_CTL_ADD, pollfd->fd, &ev) == -1)
-		die("epoll_ctl(): Failed to add to epoll fd\n");
+	if (epoll_ctl(pfd, EPOLL_CTL_ADD, pollfd->fd, &ev) == -1)
+		die("epoll_ctl(): failed to add to epoll\n");
+#elif defined(__OpenBSD__)
+	struct kevent ev = { 0 };
+
+	EV_SET(&ev, pollfd->fd, EVFILT_READ, EV_ADD, 0, 0, pollfd);
+	if (kevent(pfd, &ev, 1, NULL, 0, NULL) == -1)
+		die("EV_SET(): failed to add to kqueue\n");
+#endif
 }
 
 void
@@ -972,7 +989,13 @@ poll_del(PollFD *pollfd)
 	if (pollfd->deinit)
 		pollfd->deinit();
 	if (pollfd->fd) {
-		epoll_ctl(epfd, EPOLL_CTL_DEL, pollfd->fd, NULL);
+#if defined(__linux)
+		epoll_ctl(pfd, EPOLL_CTL_DEL, pollfd->fd, NULL);
+#elif defined(__OpenBSD__)
+		struct kevent ev = { 0 };
+		EV_SET(&ev, pollfd->fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+		kevent(pfd, &ev, 1, NULL, 0, NULL);
+#endif
 		close(pollfd->fd);
 	}
 }
@@ -1072,6 +1095,7 @@ poll_loop(void (* handler)())
 	int i, nfd, need_render;
 	PollFD *pollfd;
 
+#if defined(__linux)
 	/* timer for rendering at one sec interval */
 	struct itimerspec interval = { {1, 0}, {1, 0} };
 	/* initialize timer */
@@ -1080,16 +1104,33 @@ poll_loop(void (* handler)())
 
 	PollFD timer = { tfd, NULL, NULL, timer_reset, { 0 } };
 	poll_add(&timer);
+#elif defined(__OpenBSD__)
+	/* dummy */
+	(void)timer_reset;
+#endif
 
 	/* polling X11 event for modules */
 	PollFD xfd = { ConnectionNumber(bar.dpy), NULL, NULL, xev_handle, { 0 } };
 	poll_add(&xfd);
 
 	/* polling fd */
-	while ((nfd = epoll_wait(epfd, events, MAX_EVENTS, -1)) != -1) {
+#if defined(__linux)
+	while ((nfd = epoll_wait(pfd, events, MAX_EVENTS, -1)) != -1) {
 		need_render = 0;
+#elif defined(__OpenBSD__)
+	struct timespec tspec = { 0 };
+	tspec.tv_sec = 1;
+	while ((nfd = kevent(pfd, NULL, 0, events, MAX_EVENTS, &tspec)) != -1) {
+		need_render = 0;
+		if (!nfd)
+			need_render = 1;
+#endif
 		for (i = 0; i < nfd; i++) {
+#if defined(__linux)
 			pollfd = (PollFD *)events[i].data.ptr;
+#elif defined(__OpenBSD__)
+			pollfd = (PollFD *)events[i].udata;
+#endif
 			switch ((int)pollfd->handler(pollfd->fd)) {
 			case PR_UPDATE:
 				need_render = 1;
@@ -1102,8 +1143,10 @@ poll_loop(void (* handler)())
 			}
 		}
 		if (need_render) {
+#if defined(__linux)
 			/* force render after interval */
 			timerfd_settime(tfd, 0, &interval, NULL);
+#endif
 			windowtitle_update(bar.dpy, bar.scr);
 			handler();
 		}
@@ -1176,9 +1219,14 @@ main(int argc, char *argv[])
 	if (bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1)
 		die("bspwm_send(): Failed to send command to bspwm\n");
 
+#if defined(__linux)
 	/* epoll */
-	if ((epfd = epoll_create1(0)) == -1)
+	if ((pfd = epoll_create1(0)) == -1)
 		die("epoll_create1(): Failed to create epoll fd\n");
+#elif defined(__OpenBSD__)
+	if (!(pfd = kqueue()))
+		die("kqueue(): Failed to create kqueue fd\n");
+#endif
 
 	/* polling bspwm report */
 	PollFD bfd = { bar.fd, NULL, NULL, bspwm_handle, { 0 } };
