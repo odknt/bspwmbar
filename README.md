@@ -21,10 +21,11 @@ A lightweight status bar for bspwm.
 - [x] CPU usage per core
 - [x] Implements clickable label
 - [x] System Tray support
-- [ ] Pulseaudio support (just enough only ALSA support?)
 - [x] Refactor code
+- [x] OpenBSD support
+- [ ] FreeBSD support
+- [ ] Pulseaudio support (just enough only ALSA support?)
 - [ ] Decrease memory usage
-- [ ] BSD support
 
 ## Configure
 
@@ -39,7 +40,7 @@ Or build and install by using `make` and `make install`.
 ## Build & Debug
 
 ```sh
-# or `make optimized`
+./configure
 make
 
 # debug build with AddressSanitizer
