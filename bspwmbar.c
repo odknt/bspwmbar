@@ -373,7 +373,7 @@ windowtitle(DC dc, const char *suffix)
 	for (size_t len = 0; i < strlen(wintitle) && len < TITLE_MAXSZ; len++)
 		i += FcUtf8ToUcs4((FcChar8 *)&wintitle[i], &dst, strlen(wintitle) - i);
 	if (i < strlen(buf))
-		strncpy(&buf[i], suffix, strlen(suffix) + 1);
+		strncpy(&buf[i], suffix, sizeof(buf) - i);
 
 	drawtext(dc, buf);
 }
