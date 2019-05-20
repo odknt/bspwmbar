@@ -18,6 +18,7 @@ typedef struct {
 	int  unmuted;
 	long max, min;
 	long oneper;
+	int  has_switch;
 } AlsaInfo;
 
 static snd_ctl_t *ctl;
@@ -30,17 +31,23 @@ get_info(snd_mixer_elem_t *elem)
 {
 	if (!initialized) {
 		snd_mixer_selem_get_playback_volume_range(elem, &info.min, &info.max);
+		info.has_switch = snd_mixer_selem_has_playback_switch(elem);
 		info.oneper = BIGGER((info.max - info.min) / 100, 1);
 		initialized = 1;
 	}
 
 	snd_mixer_selem_get_playback_volume(elem, 0, &info.volume);
-	snd_mixer_selem_get_playback_switch(elem, 0, &info.unmuted);
+	if (info.has_switch)
+		snd_mixer_selem_get_playback_switch(elem, 0, &info.unmuted);
+	else
+		info.unmuted = 1;
 }
 
 static void
 toggle_mute(snd_mixer_elem_t *elem)
 {
+	if (!info.has_switch)
+		return;
 	info.unmuted = info.unmuted ? 0 : 1;
 	snd_mixer_selem_set_playback_switch_all(elem, info.unmuted);
 }
