@@ -536,8 +536,7 @@ drawcpu(DC dc, CoreInfo *a, int nproc)
 {
 	DrawCtx *dctx = (DrawCtx *)dc;
 	int maxh = bar.font.base->ascent;
-	int width = 5;
-	int basey = maxh / 2;
+	int basey = (BAR_HEIGHT - bar.font.base->ascent) / 2;
 
 	drawspace(dc, celwidth);
 	for (int i = nproc - 1; i >= 0; i--) {
@@ -554,13 +553,13 @@ drawcpu(DC dc, CoreInfo *a, int nproc)
 			fg = cols[7];
 		}
 		XSetForeground(bar.dpy, dctx->gc, cols[ALTBGCOLOR].pixel);
-		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - width,
-		               basey, width, maxh);
+		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - celwidth,
+		               basey, celwidth, maxh);
 
 		XSetForeground(bar.dpy, dctx->gc, fg.pixel);
-		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - width,
-		               basey + (maxh - height), width, height);
-		dctx->x -= width + 1;
+		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - celwidth,
+		               basey + (maxh - height), celwidth, height);
+		dctx->x -= celwidth + 1;
 	}
 	drawstring(dc, &cols[FGCOLOR], "cpu: ");
 	drawspace(dc, celwidth);
@@ -570,9 +569,8 @@ void
 drawmem(DC dc, int memused)
 {
 	DrawCtx *dctx = (DrawCtx *)dc;
-	int width = 5;
 	int maxh = bar.font.base->ascent;
-	int basey = maxh / 2;
+	int basey = (BAR_HEIGHT - bar.font.base->ascent) / 2;
 
 	drawspace(dc, celwidth);
 	for (int i = 9; i >= 0; i--) {
@@ -587,9 +585,9 @@ drawmem(DC dc, int memused)
 			fg = cols[7];
 
 		XSetForeground(bar.dpy, dctx->gc, fg.pixel);
-		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - width,
-		               basey, width, maxh);
-		dctx->x -= width + 1;
+		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - celwidth,
+		               basey, celwidth, maxh);
+		dctx->x -= celwidth + 1;
 	}
 	drawstring(dc, &cols[FGCOLOR], "mem: ");
 	drawspace(dc, celwidth);
