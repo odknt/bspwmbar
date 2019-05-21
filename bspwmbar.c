@@ -1048,6 +1048,9 @@ xev_handle()
 	while (XPending(bar.dpy)) {
 		XNextEvent(bar.dpy, &event);
 		switch (event.type) {
+		case Expose:
+			res = PR_UPDATE;
+			break;
 		case ButtonPress:
 			dctx = NULL;
 			for (int j = 0; j < bar.ndc; j++)
@@ -1234,7 +1237,8 @@ main(int argc, char *argv[])
 
 	/* polling X11 event for modules */
 	for (int i = 0; i < bar.ndc; i++)
-		XSelectInput(bar.dpy, bar.dcs[i].xbar.win, ButtonPressMask);
+		XSelectInput(bar.dpy, bar.dcs[i].xbar.win,
+		             ButtonPressMask | ExposureMask);
 
 	/* cache Atom */
 	filter = XInternAtom(bar.dpy, "_NET_WM_NAME", 1);
