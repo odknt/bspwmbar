@@ -1046,6 +1046,9 @@ xev_handle()
 	while (XPending(bar.dpy)) {
 		XNextEvent(bar.dpy, &event);
 		switch (event.type) {
+		case SelectionClear:
+			systray_handle(&tray, event);
+			break;
 		case Expose:
 			res = PR_UPDATE;
 			break;

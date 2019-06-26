@@ -47,19 +47,30 @@ enum {
 
 static Atom systray_atom;
 
+static int
+systray_get_ownership(TrayWindow *tray)
+{
+	size_t len = strlen(ATOM_SYSTRAY) + sizeof(int) + 1;
+	char *atomstr = (char *)alloca(len);
+	snprintf(atomstr, len, ATOM_SYSTRAY "%d", DefaultScreen(tray->dpy));
+	systray_atom = XInternAtom(tray->dpy, atomstr, 1);
+
+	if (XGetSelectionOwner(tray->dpy, systray_atom) != None)
+		return -1;
+
+	XSetSelectionOwner(tray->dpy, systray_atom, tray->win, CurrentTime);
+
+	return 0;
+}
+
 int
 systray_init(TrayWindow *tray)
 {
 	XSetWindowAttributes wattrs;
 	list_head_init(&tray->items);
 
-	size_t len = strlen(ATOM_SYSTRAY) + sizeof(int) + 1;
-	char *atomstr = (char *)alloca(len);
-	snprintf(atomstr, len, ATOM_SYSTRAY "%d", DefaultScreen(tray->dpy));
-	systray_atom = XInternAtom(tray->dpy, atomstr, 1);
-	if (XGetSelectionOwner(tray->dpy, systray_atom) != None)
+	if (systray_get_ownership(tray))
 		return -1;
-	XSetSelectionOwner(tray->dpy, systray_atom, tray->win, CurrentTime);
 
 	wattrs.event_mask = ClientMessage;
 	XChangeWindowAttributes(tray->dpy, tray->win, CWEventMask, &wattrs);
@@ -75,7 +86,6 @@ systray_init(TrayWindow *tray)
 	ev.xclient.data.l[4] = 0;
 
 	XSendEvent(tray->dpy, tray->win, 0, StructureNotifyMask, &ev);
-
 
 	return 0;
 }
@@ -183,6 +193,9 @@ systray_handle(TrayWindow *tray, XEvent ev)
 	Atom atom;
 
 	switch (ev.type) {
+	case SelectionClear:
+		systray_get_ownership(tray);
+		break;
 	case ClientMessage:
 		atom = XInternAtom(tray->dpy, "_NET_SYSTEM_TRAY_OPCODE", 0);
 		if (ev.xclient.message_type != atom)
