@@ -736,28 +736,11 @@ render()
 }
 
 static int
-parse_display(const char *dpy, char **host, int *dnum, int *snum)
-{
-	const char *dpystr;
-	dnum = 0; snum = 0;
-
-	if (dpy)
-		dpystr = dpy;
-	else
-		dpystr = getenv("DISPLAY");
-
-	sscanf(dpystr, "%s:%d.%d", buf, dnum, snum);
-	*host = strndup(buf, strlen(buf));
-
-	return 0;
-}
-
-static int
-bspwm_connect()
+bspwm_connect(Display *dpy, int scr)
 {
 	struct sockaddr_un sock;
-	int fd, dn = 0, sn = 0;
-	char *sp, *host;
+	int fd;
+	char *sp = NULL, *host = NULL;
 
 	sock.sun_family = AF_UNIX;
 	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
@@ -767,9 +750,8 @@ bspwm_connect()
 	if (sp) {
 		snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", sp);
 	} else {
-		if (parse_display(NULL, &host, &dn, &sn))
-			snprintf(sock.sun_path, sizeof(sock.sun_path),
-			         "/tmp/bspwm%s_%i_%i-socket", host, dn, sn);
+		snprintf(sock.sun_path, sizeof(sock.sun_path),
+		         "/tmp/bspwm_%i_%i-socket", ConnectionNumber(dpy), scr);
 		free(host);
 	}
 	if (connect(fd, (struct sockaddr *)&sock, sizeof(sock)) == -1)
@@ -789,7 +771,7 @@ bspwmbar_init(Display *dpy, int scr)
 	int i, j, nmon;
 
 	/* connect bspwm socket */
-	if ((bar.fd = bspwm_connect()) == -1)
+	if ((bar.fd = bspwm_connect(dpy, scr)) == -1)
 		die("bspwm_connect(): Failed to connect to the socket\n");
 
 	/* get monitors */
