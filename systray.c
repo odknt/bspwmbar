@@ -244,8 +244,8 @@ systray_destroy(TrayWindow *tray)
 {
 	XSetSelectionOwner(tray->dpy, systray_atom, 0, CurrentTime);
 
-	list_head *pos;
-	list_for_each(&tray->items, pos) {
+	list_head *pos, *tmp;
+	list_for_each_safe(&tray->items, pos, tmp) {
 		TrayItem *item = list_entry(pos, TrayItem, head);
 		xembed_unembed_window(tray, item->win);
 		list_del(pos);

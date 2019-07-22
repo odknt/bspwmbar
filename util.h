@@ -27,6 +27,10 @@ for (pos = (head)->next; pos != (head); pos = pos->next)
 #define list_entry(ptr, type, member) \
 ((type *)((char *)(ptr)-(unsigned long)(&((type *)0)->member)))
 #define list_empty(head) ((head)->next == (head))
+#define list_count(head, num) \
+for (list_head *pos = (head)->next; pos != (head); pos = pos->next) num++
+#define list_for_each_safe(head, pos, n) \
+for (pos = (head)->next, n = pos->next; pos != (head); pos = n, n = pos->next)
 
 static inline void
 list_init(list_head *head, list_head *prev, list_head *next)
