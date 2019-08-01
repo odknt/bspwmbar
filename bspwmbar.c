@@ -142,6 +142,9 @@ static struct kevent events[MAX_EVENTS];
 #endif
 static list_head pollfds;
 
+static int error_handler(Display *dpy, XErrorEvent *err);
+static int dummy_error_handler(Display *dpy, XErrorEvent *err);
+
 XftColor *
 getcolor(int index)
 {
@@ -889,6 +892,8 @@ systray(DC dc, const char *arg)
 	if (tray.win != dctx->xbar.win)
 		return;
 
+	XSetErrorHandler(dummy_error_handler);
+
 	drawspace(dc, celwidth);
 	list_head *pos;
 	list_for_each(&tray.items, pos) {
@@ -905,6 +910,8 @@ systray(DC dc, const char *arg)
 		drawspace(dc, celwidth);
 	}
 	drawspace(dc, celwidth);
+
+	XSetErrorHandler(error_handler);
 }
 
 static void
@@ -914,7 +921,7 @@ polling_stop()
 		close(pfd);
 }
 
-int
+static int
 error_handler(Display *dpy, XErrorEvent *err)
 {
 	switch (err->type) {
