@@ -11,9 +11,10 @@
 #define BIGGER(A, B)     ((A) > (B) ? (A) : (B))
 #define DIVCEIL(n, d)    (((n) + ((d) - 1)) / (d))
 
+#define die(...) { fprintf(stderr, __VA_ARGS__); exit(1); }
+
 extern char buf[1024];
 
-void die(const char *, ...);
 int pscanf(const char *, const char *, ...);
 
 typedef struct _list_head {
