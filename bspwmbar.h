@@ -20,26 +20,12 @@ typedef enum {
 	PR_FAILED
 } PollResult;
 
-#if defined(__linux)
 typedef struct {
-	double user;
-	double nice;
-	double system;
-	double idle;
-	double iowait;
-	double irq;
-	double softirq;
-	double sum;
-	double loadavg;
-} CoreInfo;
-#elif defined(__OpenBSD__)
-typedef struct {
-	uintmax_t states[CPUSTATES];
-	uintmax_t sum;
-	uintmax_t used;
-	double loadavg;
-} CoreInfo;
-#endif
+	double val;
+	int    colorno;
+} GraphItem;
+
+typedef struct _CoreInfo *CoreInfo;
 
 #if defined(__linux)
 typedef struct {
@@ -90,16 +76,15 @@ typedef struct {
 
 XftColor *getcolor(int);
 void drawtext(DC, const char *);
-void drawcpu(DC, CoreInfo *, int);
-void drawmem(DC, int);
+void draw_bargraph(DC, const char *, GraphItem *, int);
 void poll_add(PollFD *);
 void poll_del(PollFD *);
 
 /* cpu.c */
-int cpu_perc(CoreInfo **);
+int cpu_perc(double **);
 
 /* mem.c */
-int mem_perc();
+double mem_perc();
 
 /* systray.c */
 int systray_init(TrayWindow *);

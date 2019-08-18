@@ -12,17 +12,17 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static inline int
+static inline double
 calc_used(MemInfo mem)
 {
 #if defined(__linux)
-	return (mem.total - mem.available) / (double)mem.total * 100;
+	return (mem.total - mem.available) / (double)mem.total;
 #elif defined(__OpenBSD__)
 	return mem.active * 100 / mem.npages;
 #endif
 }
 
-int
+double
 mem_perc()
 {
 	static time_t prevtime = { 0 };
@@ -58,5 +58,18 @@ void
 memgraph(DC dc, const char *arg)
 {
 	(void)arg;
-	drawmem(dc, mem_perc());
+	double used = mem_perc();
+	GraphItem items[10];
+	for (int i = 0; i < 10; i++) {
+		items[i].val = (used > ((double)i / 10)) ? 1 : -1;
+		if (i < 3)
+			items[i].colorno = 4;
+		else if (i < 6)
+			items[i].colorno = 5;
+		else if (i < 8)
+			items[i].colorno = 6;
+		else
+			items[i].colorno = 7;
+	}
+	draw_bargraph(dc, "mem: ", items, 10);
 }

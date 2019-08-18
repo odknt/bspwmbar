@@ -1,5 +1,6 @@
 /* See LICENSE file for copyright and license details. */
 
+#include <alloca.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,27 @@
 
 #include "bspwmbar.h"
 #include "util.h"
+
+#if defined(__linux)
+struct _CoreInfo {
+	double user;
+	double nice;
+	double system;
+	double idle;
+	double iowait;
+	double irq;
+	double softirq;
+	double sum;
+	double loadavg;
+};
+#elif defined(__OpenBSD__)
+struct _CoreInfo {
+	uintmax_t states[CPUSTATES];
+	uintmax_t sum;
+	uintmax_t used;
+	double loadavg;
+};
+#endif
 
 static int
 num_procs()
@@ -38,10 +60,11 @@ num_procs()
 }
 
 int
-cpu_perc(CoreInfo **cores)
+cpu_perc(double **cores)
 {
-	static CoreInfo *a = NULL;
-	static CoreInfo *b = NULL;
+	static struct _CoreInfo *a = NULL;
+	static struct _CoreInfo *b = NULL;
+	static double *loadavgs = NULL;
 	static time_t prevtime;
 	int i = 0;
 	int nproc;
@@ -51,17 +74,19 @@ cpu_perc(CoreInfo **cores)
 
 	time_t curtime = time(NULL);
 	if (curtime - prevtime < 1) {
-		*cores = a;
+		*cores = loadavgs;
 		return nproc;
 	}
 	prevtime = curtime;
 
 	if (a == NULL)
-		a = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
+		a = (struct _CoreInfo *)calloc(sizeof(struct _CoreInfo), nproc);
 	if (b == NULL)
-		b = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
+		b = (struct _CoreInfo *)calloc(sizeof(struct _CoreInfo), nproc);
+	if (loadavgs == NULL)
+		loadavgs = (double *)calloc(sizeof(double), nproc);
 
-	memcpy(b, a, sizeof(CoreInfo) * nproc);
+	memcpy(b, a, sizeof(struct _CoreInfo) * nproc);
 
 #if defined(__linux)
 	FILE *fp;
@@ -83,7 +108,7 @@ cpu_perc(CoreInfo **cores)
 		double used =
 		  (b[i].user + b[i].nice + b[i].system + b[i].irq + b[i].softirq) -
 		  (a[i].user + a[i].nice + a[i].system + a[i].irq + a[i].softirq);
-		a[i].loadavg = used / (b[i].sum - a[i].sum) * 100 + 0.5;
+		loadavgs[i] = used / (b[i].sum - a[i].sum);
 		i++;
 	}
 	fclose(fp);
@@ -104,12 +129,11 @@ cpu_perc(CoreInfo **cores)
 		            a[i].states[CP_SYS] + a[i].states[CP_INTR] +
 		            a[i].states[CP_IDLE]);
 		a[i].used = a[i].sum - a[i].states[CP_IDLE];
-		a[i].loadavg = (a[i].used - b[i].used) /
-		               (a[i].sum - b[i].sum) * 100 + 5;
+		loadavgs[i] = (a[i].used - b[i].used) / (a[i].sum - b[i].sum);
 	}
 #endif
 
-	*cores = a;
+	*cores = loadavgs;
 	return nproc;
 }
 
@@ -118,7 +142,22 @@ cpugraph(DC dc, const char *arg)
 {
 	(void)arg;
 
-	CoreInfo *cores;
-	int ncore = cpu_perc(&cores);
-	drawcpu(dc, cores, ncore);
+	double *vals;
+	int ncore = cpu_perc(&vals);
+
+	GraphItem *items = (GraphItem *)alloca(sizeof(GraphItem) * ncore);
+	for (int i = 0; i < ncore; i++) {
+		items[i].val = vals[i];
+		if (vals[i] < 0.3) {
+			items[i].colorno = 4;
+		} else if (vals[i] < 0.6) {
+			items[i].colorno = 5;
+		} else if (vals[i] < 0.8) {
+			items[i].colorno = 6;
+		} else {
+			items[i].colorno = 7;
+		}
+	}
+
+	draw_bargraph(dc, "cpu: ", items, ncore);
 }

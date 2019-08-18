@@ -535,64 +535,42 @@ drawtext(DC dc, const char *str)
 }
 
 void
-drawcpu(DC dc, CoreInfo *a, int nproc)
+draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
 {
 	DrawCtx *dctx = (DrawCtx *)dc;
+	XGlyphInfo extents = { 0 };
 	int maxh = bar.font.base->ascent;
 	int basey = (BAR_HEIGHT - bar.font.base->ascent) / 2;
 
 	drawspace(dc, celwidth);
-	for (int i = nproc - 1; i >= 0; i--) {
-		int avg = (int)a[i].loadavg;
-		int height = BIGGER(maxh * ((double)avg / 100), 1);
-		XftColor fg;
-		if (avg < 30) {
-			fg = cols[4];
-		} else if (avg < 60) {
-			fg = cols[5];
-		} else if (avg < 80) {
-			fg = cols[6];
-		} else {
-			fg = cols[7];
-		}
+	DrawAlign align = dctx->align;
+	if (align == DA_RIGHT) {
+		dctx->x -= getdrawwidth(label, &extents);
+		dctx->x -= (celwidth + 1) * nitem;
+		dctx->align = DA_LEFT;
+	}
+	int posx = dctx->x;
+	drawstring(dc, &cols[FGCOLOR], label);
+	drawspace(dc, celwidth);
+	for (int i = 0; i < nitem; i++) {
 		XSetForeground(bar.dpy, dctx->gc, cols[ALTBGCOLOR].pixel);
 		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - celwidth,
 		               basey, celwidth, maxh);
 
-		XSetForeground(bar.dpy, dctx->gc, fg.pixel);
+		if (items[i].val < 0)
+			goto CONTINUE;
+
+		int height = SMALLER(BIGGER(maxh * items[i].val, 1), maxh);
+		XSetForeground(bar.dpy, dctx->gc, cols[items[i].colorno].pixel);
 		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - celwidth,
 		               basey + (maxh - height), celwidth, height);
-		dctx->x -= celwidth + 1;
+	CONTINUE:
+		dctx->x += celwidth + 1;
 	}
-	drawstring(dc, &cols[FGCOLOR], "cpu: ");
-	drawspace(dc, celwidth);
-}
-
-void
-drawmem(DC dc, int memused)
-{
-	DrawCtx *dctx = (DrawCtx *)dc;
-	int maxh = bar.font.base->ascent;
-	int basey = (BAR_HEIGHT - bar.font.base->ascent) / 2;
-
-	drawspace(dc, celwidth);
-	for (int i = 9; i >= 0; i--) {
-		XftColor fg = cols[ALTBGCOLOR];
-		if (i <= 2 && memused >= i * 10)
-			fg = cols[4];
-		else if (i <= 5 && memused >= i * 10)
-			fg = cols[5];
-		else if (i <= 7 && memused >= i * 10)
-			fg = cols[6];
-		else if (memused >= 90)
-			fg = cols[7];
-
-		XSetForeground(bar.dpy, dctx->gc, fg.pixel);
-		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - celwidth,
-		               basey, celwidth, maxh);
-		dctx->x -= celwidth + 1;
+	if (align == DA_RIGHT) {
+		dctx->align = DA_RIGHT;
+		dctx->x = posx;
 	}
-	drawstring(dc, &cols[FGCOLOR], "mem: ");
 	drawspace(dc, celwidth);
 }
 
