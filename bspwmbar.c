@@ -41,11 +41,7 @@
 
 /* temporary buffer */
 char buf[1024];
-
-static char ascii_table[] =
-	" !\"#$%&'()*+,-./0123456789:;<=>?"
-	"@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_"
-	"`abcdefghijklmnopqrstuvwxyz{|}~";
+static XftCharFontSpec glyph_caches[1024];
 
 static char *_net_wm_states[] = {
 	"_NET_WM_STATE_STICKY",
@@ -641,25 +637,62 @@ load_fonts(const char *patstr)
 }
 
 /**
- * get_draw_width() - Gets rendering width of str.
- * @str: render string.
- * @extents: (out) glyph information.
+ * get_base_line() - Get text rendering baseline.
  *
- * Return: Width.
+ * Return: y offset.
  */
-int
-get_draw_width(const char *str, XGlyphInfo *extents)
+static int
+get_baseline()
 {
-	FcChar32 rune = 0;
-	int width = 0, len = 0;
-	XftFont *font;
-	for (unsigned int i = 0; i < strlen(str); i += len) {
-		len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
-		font = get_font(rune);
-		XftTextExtentsUtf8(bar.dpy, font, (FcChar8 *)&str[i], len, extents);
-		width += extents->x + extents->xOff;
+	return (BAR_HEIGHT - bar.font.base->height) / 2 + bar.font.base->ascent;
+}
+
+/**
+ * dc_calc_render_pos() - calculate render position.
+ * @dc: DC.
+ * @glyphs: (in/out) XftCharFontSpec *.
+ * @nglyph: lenght of glyphs.
+ */
+static void
+dc_calc_render_pos(DC dc, XftCharFontSpec *glyphs, int nglyph)
+{
+	int x = dc_get_x(dc);
+	for (int i = 0; i < nglyph; i++) {
+		glyphs[i].x += x;
 	}
-	return width;
+}
+
+/**
+ * load_glyphs() - load XGlyphFontSpec from specified str.
+ * @str: utf-8 string.
+ * @glyphs: (out) XCharFontSpec *.
+ * @nglyph: length of glyphs.
+ * @width: (out) rendering width.
+ *
+ * Return: Number of loaded glyphs.
+ */
+static int
+load_glyphs(const char *str, XftCharFontSpec *glyphs, int nglyph, int *width)
+{
+	XGlyphInfo extents = { 0 };
+	FcChar32 rune = 0;
+	int i, len = 0;
+	size_t offset = 0;
+	int y = get_baseline();
+
+	*width = 0;
+	for (i = 0; offset < strlen(str) && i < nglyph; i++, offset += len) {
+		len = FcUtf8ToUcs4((FcChar8 *)&str[offset], &rune, strlen(str) - i);
+		glyphs[i].font = get_font(rune);
+		glyphs[i].ucs4 = rune;
+		glyphs[i].x = *width;
+		glyphs[i].y = y;
+		XftTextExtentsUtf8(bar.dpy, glyphs[i].font, (FcChar8 *)&str[offset],
+		                   len, &extents);
+		*width += extents.x + extents.xOff;
+	}
+
+	return i;
 }
 
 /**
@@ -691,25 +724,12 @@ draw_padding(DC dc, int num)
 static void
 draw_string(DC dc, XftColor *color, const char *str)
 {
-	XGlyphInfo extents = { 0 };
-	FcChar32 rune = 0;
-	int len = 0;
-	XftFont *font;
-
-	int width = get_draw_width(str, &extents);
+	int width;
+	int nglyph = load_glyphs(str, glyph_caches, sizeof(glyph_caches), &width);
 	if (dc->align == DA_RIGHT)
-		dc->right_x += width;
-	int x = dc_get_x(dc);
-	int y = (BAR_HEIGHT - bar.font.base->height) / 2 + bar.font.base->ascent;
-	for (unsigned int i = 0; i < strlen(str); i += len) {
-		int len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
-		font = get_font(rune);
-		XftTextExtentsUtf8(bar.dpy, font, (FcChar8 *)&str[i], len, &extents);
-		XftDrawStringUtf8(dc->draw, color, font, x + extents.x,
-		                  y, (FcChar8 *)&str[i], len);
-		x += extents.x + extents.xOff;
-		i += len;
-	}
+		dc_move_x(dc, width);
+	dc_calc_render_pos(dc, glyph_caches, nglyph);
+	XftDrawCharFontSpec(dc->draw, color, glyph_caches, nglyph);
 	if (dc->align == DA_LEFT)
 		dc_move_x(dc, width);
 }
@@ -847,7 +867,6 @@ static void
 render_label(DC dc)
 {
 	int x = 0, width = 0;
-
 	for (int j = 0; j < dc->nlabel; j++) {
 		x = dc_get_x(dc); width = 0;
 
@@ -874,8 +893,11 @@ render()
 	XGlyphInfo extents = { 0 };
 
 	/* padding width */
-	if (!celwidth)
-		celwidth = get_draw_width("a", &extents);
+	if (!celwidth) {
+		XftTextExtentsUtf8(bar.dpy, bar.font.base, (FcChar8 *)" ", strlen(" "),
+		                   &extents);
+		celwidth = extents.x + extents.xOff;
+	}
 
 	for (int i = 0; i < bar.ndc; i++) {
 		DC dc = bar.dcs[i];
@@ -942,7 +964,6 @@ bspwmbar_init(Display *dpy, int scr)
 	XRRScreenResources *xrr_res;
 	XRRMonitorInfo *xrr_mon;
 	XRROutputInfo *xrr_out;
-	XGlyphInfo extents = { 0 };
 	Window root = RootWindow(dpy, scr);
 	int i, j, nmon;
 
@@ -1043,7 +1064,7 @@ workspace(DC dc, const char *args)
 	draw_padding(dc, celwidth);
 	for (int i = 0, j = max - 1; i < max; i++, j--) {
 		cur = (dc->align == DA_RIGHT) ? j : i;
-		draw_padding(dc, celwidth / 2);
+		draw_padding(dc, celwidth / 2.0 + 0.5);
 		ws = (dc->xbar.monitor.workspaces[cur].state & STATE_ACTIVE)
 		     ? workspace_chars[0]
 		     : workspace_chars[1];
@@ -1051,7 +1072,7 @@ workspace(DC dc, const char *args)
 		      ? cols[ALTFGCOLOR]
 		      : cols[FGCOLOR];
 		draw_string(dc, &col, ws);
-		draw_padding(dc, celwidth / 2);
+		draw_padding(dc, celwidth / 2.0 + 0.5);
 	}
 	draw_padding(dc, celwidth);
 }
