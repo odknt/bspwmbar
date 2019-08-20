@@ -12,7 +12,7 @@ CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -DND
 LDFLAGS='-s'
 
 # debug flags
-DCFLAGS='-g'
+DCFLAGS='-g -D_XOPEN_SOURCE=700'
 DLDFLAGS=''
 
 usage_exit() {

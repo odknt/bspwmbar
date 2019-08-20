@@ -1472,12 +1472,11 @@ main(int argc, char *argv[])
 		die("XOpenDisplay(): Failed to open display\n");
 	XSetErrorHandler(error_handler);
 
+#ifndef DISABLE_XDBE
 	/* Xdbe initialize */
 	int major, minor;
 	if (XdbeQueryExtension(dpy, &major, &minor))
 		xdbe_support = 1;
-#ifdef DISABLE_XDBE
-	xdbe_support = 0;
 #endif
 
 	/* get active widnow title */
