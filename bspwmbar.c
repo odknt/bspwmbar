@@ -154,7 +154,7 @@ static int error_handler(Display *dpy, XErrorEvent *err);
 static int dummy_error_handler(Display *dpy, XErrorEvent *err);
 
 /**
- * get_color() - Get XftColor pointer by index of color caches.
+ * get_color() - get XftColor pointer by index of color caches.
  * @index: index of the color.
  *
  * Return: XftColor *
@@ -166,10 +166,10 @@ get_color(int index)
 }
 
 /**
- * load_xft_color() - Get XftColor by color name.
- * @dpy: Display pointer.
- * @scr: Screen number.
- * @colstr: Color name.
+ * load_xft_color() - get XftColor by color name.
+ * @dpy: display pointer.
+ * @scr: screen number.
+ * @colstr: color name.
  *
  * The returned XftColor must call XftColorFree() after used.
  *
@@ -186,9 +186,9 @@ load_xft_color(Display *dpy, int scr, const char *colstr)
 }
 
 /**
- * load_colors() - Load colors for bspwmbar.
- * @dpy: Display pointer.
- * @scr: Screen number.
+ * load_colors() - load colors for bspwmbar.
+ * @dpy: display pointer.
+ * @scr: screen number.
  */
 static void
 load_colors(Display *dpy, int scr)
@@ -198,9 +198,9 @@ load_colors(Display *dpy, int scr)
 }
 
 /**
- * free_colors() - Free loaded colors.
- * @dpy: Display pointer.
- * @scr: Screen number.
+ * free_colors() - free loaded colors.
+ * @dpy: display pointer.
+ * @scr: screen number.
  */
 static void
 free_colors(Display *dpy, int scr)
@@ -211,11 +211,10 @@ free_colors(Display *dpy, int scr)
 }
 
 /**
- * ws_state() - Parse char to bspwm workspace state.
+ * ws_state() - parse char to bspwm workspace state.
  * @s: workspace state char.
  *
  * Retrun: WsState
- *
  * 'o'         - STATE_OCCUPIED
  * 'u'         - STATE_URGENT
  * 'F','U','O' - STATE_ACTIVE
@@ -235,10 +234,10 @@ ws_state(char s)
 }
 
 /**
- * get_window_prop() - Get window property.
- * @dpy: Display pointer.
- * @win: Window
- * @property: Property name.
+ * get_window_prop() - get window property.
+ * @dpy: display pointer.
+ * @win: target window.
+ * @property: property name.
  *
  * Return: Property value as (unsigned char *).
  *         The value needs free by call free() after used.
@@ -262,14 +261,14 @@ get_window_prop(Display *dpy, Window win, char *property)
 }
 
 /**
- * set_window_prop() - Set window property.
- * @dpy: Display pointer.
- * @win: Window.
+ * set_window_prop() - set window property.
+ * @dpy: display pointer.
+ * @win: window.
  * @type: Atom type.
- * @property: Property name.
- * @mode: Operation mode. Prease see XChangeProperty(3).
- * @propvalue: Property values array.
- * @nvalue: Length of property propvalue.
+ * @property: property name.
+ * @mode: operation mode. Prease see XChangeProperty(3).
+ * @propvalue: property values array.
+ * @nvalue: length of propvalue.
  */
 static void
 set_window_prop(Display *dpy, Window win, Atom type, char *property, int mode,
@@ -302,8 +301,8 @@ set_window_prop(Display *dpy, Window win, Atom type, char *property, int mode,
 }
 
 /**
- * get_visual_info() - Get XVisualInfo object.
- * @dpy: Display pointer.
+ * get_visual_info() - get XVisualInfo object.
+ * @dpy: display pointer.
  *
  * This function needs Xdbe support.
  *
@@ -339,11 +338,11 @@ get_visual_info(Display *dpy)
 /**
  * dc_init() - initialize DC.
  * @dc: DC.
- * @scr: Screen number.
- * @x: Window position x.
- * @y: Window position y.
- * @width: Window width.
- * @height: Window height.
+ * @scr: screen number.
+ * @x: window position x.
+ * @y: window position y.
+ * @width: window width.
+ * @height: window height.
  */
 static void
 dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
@@ -424,7 +423,7 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 }
 
 /**
- * dc_get_x() - Get next rendering position of DC.
+ * dc_get_x() - get next rendering position of DC.
  * @dc: DC.
  *
  * Return: int
@@ -438,9 +437,9 @@ dc_get_x(DC dc)
 }
 
 /**
- * dc_move_x() - Move rendering position by x.
+ * dc_move_x() - move rendering position by x.
  * @dc: DC.
- * @x: Distance of movement.
+ * @x: distance of movement.
  */
 static void
 dc_move_x(DC dc, int x)
@@ -452,9 +451,9 @@ dc_move_x(DC dc, int x)
 }
 
 /**
- * get_active_window() - Get active window.
- * @dpy: Display pointer.
- * @scr: Screen number.
+ * get_active_window() - get active window.
+ * @dpy: display pointer.
+ * @scr: screen number.
  *
  * Return: Window
  */
@@ -473,9 +472,9 @@ get_active_window(Display *dpy, int scr)
 }
 
 /**
- * get_window_title() - Get title of specified win.
- * @dpy: Display pointer.
- * @win: Window.
+ * get_window_title() - get title of specified win.
+ * @dpy: display pointer.
+ * @win: window.
  *
  * Return: unsigned char *
  *         The return value needs free after used.
@@ -492,9 +491,9 @@ get_window_title(Display *dpy, Window win)
 }
 
 /**
- * windowtitle_update() - Update windowtitle() returns value.
- * @dpy: Display pointer.
- * @scr: Screen number.
+ * windowtitle_update() - update windowtitle() returns value.
+ * @dpy: display pointer.
+ * @scr: screen number.
  */
 static void
 windowtitle_update(Display *dpy, int scr)
@@ -512,9 +511,9 @@ windowtitle_update(Display *dpy, int scr)
 }
 
 /**
- * windowtitle() - Active window title render function.
+ * windowtitle() - active window title render function.
  * @dc: DC.
- * @suffix: Suffix when substituted long title.
+ * @suffix: suffix when substituted long title.
  */
 void
 windowtitle(DC dc, const char *suffix)
@@ -534,7 +533,7 @@ windowtitle(DC dc, const char *suffix)
 }
 
 /**
- * get_font() - Finds a font that renderable specified rune.
+ * get_font() - finds a font that renderable specified rune.
  * @rune: FcChar32
  *
  * Return: XftFont *
@@ -598,7 +597,7 @@ get_font(FcChar32 rune)
 }
 
 /**
- * load_fonts() - Load fonts by specified fontconfig pattern string.
+ * load_fonts() - load fonts by specified fontconfig pattern string.
  * @patstr: pattern string.
  *
  * Return:
@@ -637,7 +636,7 @@ load_fonts(const char *patstr)
 }
 
 /**
- * get_base_line() - Get text rendering baseline.
+ * get_base_line() - get text rendering baseline.
  *
  * Return: y offset.
  */
@@ -669,7 +668,7 @@ dc_calc_render_pos(DC dc, XftCharFontSpec *glyphs, int nglyph)
  * @nglyph: length of glyphs.
  * @width: (out) rendering width.
  *
- * Return: Number of loaded glyphs.
+ * Return: number of loaded glyphs.
  */
 static int
 load_glyphs(const char *str, XftCharFontSpec *glyphs, int nglyph, int *width)
@@ -696,9 +695,9 @@ load_glyphs(const char *str, XftCharFontSpec *glyphs, int nglyph, int *width)
 }
 
 /**
- * draw_padding() - Render padding.
+ * draw_padding() - pender padding.
  * @dc: DC.
- * @num: Padding width.
+ * @num: padding width.
  */
 static void
 draw_padding(DC dc, int num)
@@ -716,10 +715,10 @@ draw_padding(DC dc, int num)
 }
 
 /**
- * draw_string() - Render string with the color.
+ * draw_string() - render string with the color.
  * @dc: DC.
- * @color: Rendering text color.
- * @str: Rendering text.
+ * @color: rendering text color.
+ * @str: rendering text.
  */
 static void
 draw_string(DC dc, XftColor *color, const char *str)
@@ -735,9 +734,9 @@ draw_string(DC dc, XftColor *color, const char *str)
 }
 
 /**
- * draw_text() - Render text.
+ * draw_text() - render text.
  * @dc: DC.
- * @str: Rendering text.
+ * @str: rendering text.
  */
 void
 draw_text(DC dc, const char *str)
@@ -748,11 +747,11 @@ draw_text(DC dc, const char *str)
 }
 
 /**
- * draw_bargraph() - Render bar graph.
+ * draw_bargraph() - render bar graph.
  * @dc: DC.
- * @label: Label of the graph.
- * @items: Items of the Graph.
- * @nitem: Number of items.
+ * @label: label of the graph.
+ * @items: items of the Graph.
+ * @nitem: number of items.
  */
 void
 draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
@@ -787,8 +786,8 @@ draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
 }
 
 /**
- * bspwm_parse() - Parse bspwm reported string.
- * @report: Bspwm reported string.
+ * bspwm_parse() - parse bspwm reported string.
+ * @report: bspwm reported string.
  */
 static void
 bspwm_parse(char *report)
@@ -847,9 +846,9 @@ bspwm_parse(char *report)
 }
 
 /**
- * logo() - Render the specified text.
+ * logo() - render the specified text.
  * @dc: DC
- * @args: Rendering text.
+ * @args: rendering text.
  */
 void
 logo(DC dc, const char *args)
@@ -860,7 +859,7 @@ logo(DC dc, const char *args)
 }
 
 /**
- * render_label() - Render all labels
+ * render_label() - render all labels
  * @dc: DC.
  */
 static void
@@ -953,10 +952,12 @@ bspwm_connect(Display *dpy, int scr)
 
 /**
  * bpswmbar_init() - initialize bspwmbar.
- * @dpy: Display pointer.
- * @scr: Screen number.
+ * @dpy: display pointer.
+ * @scr: screen number.
  *
- * Return: 0 on success, 1 on failure.
+ * Return:
+ * 0 - success
+ * 1 - failure
  */
 static int
 bspwmbar_init(Display *dpy, int scr)
@@ -1053,6 +1054,11 @@ bspwm_send(char *cmd, int len)
 	return send(bar.fd, cmd, len, 0);
 }
 
+/**
+ * workspace() - render bspwm workspace states.
+ * @dc: DC.
+ * @args: dummy.
+ */
 void
 workspace(DC dc, const char *args)
 {
@@ -1126,7 +1132,7 @@ polling_stop()
 
 /**
  * error_handler() - X11 error handler.
- * @dpy: Display pointer.
+ * @dpy: display pointer.
  * @err: XErrorEvent.
  *
  * Return: always 0.
@@ -1272,10 +1278,10 @@ bspwm_handle(int fd)
 
 /*
  * xev_handle() - X11 event handling
- * Return: PollResult
  *
- * success and not need more action - PR_NOOP
- * success and need rerendering     - PR_UPDATE
+ * Return: PollResult
+ * PR_NOOP   - success and not need more action
+ * PR_UPDATE - success and need rerendering
  */
 static PollResult
 xev_handle()
@@ -1401,8 +1407,8 @@ poll_loop(void (* handler)())
 }
 
 /**
- * @signal_handler - A signal handler.
- * @signum: Signal number.
+ * @signal_handler - a signal handler.
+ * @signum: signal number.
  *
  * The function stop polling if signum equals SIGINT or SIGTERM.
  */
@@ -1417,7 +1423,7 @@ signal_handler(int signum) {
 }
 
 /**
- * dummy_error_handler() - A dummy X11 error handler.
+ * dummy_error_handler() - a dummy X11 error handler.
  * @dpy: dummy.
  * @err: dummy.
  *
