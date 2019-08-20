@@ -12,6 +12,7 @@
 #define DIVCEIL(n, d)    (((n) + ((d) - 1)) / (d))
 
 #define die(...) { fprintf(stderr, __VA_ARGS__); exit(1); }
+#define err(...) { fprintf(stderr, __VA_ARGS__); }
 
 extern char buf[1024];
 

@@ -18,7 +18,7 @@
 #include "util.h"
 
 #if defined(__linux)
-struct _CoreInfo {
+typedef struct {
 	double user;
 	double nice;
 	double system;
@@ -27,15 +27,13 @@ struct _CoreInfo {
 	double irq;
 	double softirq;
 	double sum;
-	double loadavg;
-};
+} CoreInfo;
 #elif defined(__OpenBSD__)
-struct _CoreInfo {
+typedef struct {
 	uintmax_t states[CPUSTATES];
 	uintmax_t sum;
 	uintmax_t used;
-	double loadavg;
-};
+} CoreInfo;
 #endif
 
 static int
@@ -59,12 +57,13 @@ num_procs()
 #endif
 }
 
-int
+static double *loadavgs = NULL;
+
+static int
 cpu_perc(double **cores)
 {
-	static struct _CoreInfo *a = NULL;
-	static struct _CoreInfo *b = NULL;
-	static double *loadavgs = NULL;
+	static CoreInfo *a = NULL;
+	static CoreInfo *b = NULL;
 	static time_t prevtime;
 	int i = 0;
 	int nproc;
@@ -80,13 +79,13 @@ cpu_perc(double **cores)
 	prevtime = curtime;
 
 	if (a == NULL)
-		a = (struct _CoreInfo *)calloc(sizeof(struct _CoreInfo), nproc);
+		a = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
 	if (b == NULL)
-		b = (struct _CoreInfo *)calloc(sizeof(struct _CoreInfo), nproc);
+		b = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
 	if (loadavgs == NULL)
 		loadavgs = (double *)calloc(sizeof(double), nproc);
 
-	memcpy(b, a, sizeof(struct _CoreInfo) * nproc);
+	memcpy(b, a, sizeof(CoreInfo) * nproc);
 
 #if defined(__linux)
 	FILE *fp;
@@ -142,7 +141,7 @@ cpugraph(DC dc, const char *arg)
 {
 	(void)arg;
 
-	double *vals;
+	double *vals = NULL;
 	int ncore = cpu_perc(&vals);
 
 	GraphItem *items = (GraphItem *)alloca(sizeof(GraphItem) * ncore);

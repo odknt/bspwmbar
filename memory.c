@@ -12,6 +12,15 @@
 #include "bspwmbar.h"
 #include "util.h"
 
+#if defined(__linux)
+typedef struct {
+	size_t total;
+	size_t available;
+} MemInfo;
+#elif defined(__OpenBSD__)
+typedef struct uvmexp MemInfo;
+#endif
+
 static inline double
 calc_used(MemInfo mem)
 {
@@ -22,7 +31,7 @@ calc_used(MemInfo mem)
 #endif
 }
 
-double
+static double
 mem_perc()
 {
 	static time_t prevtime = { 0 };

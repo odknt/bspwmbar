@@ -11,6 +11,7 @@
 #include <X11/Xutil.h>
 
 #include "bspwmbar.h"
+#include "systray.h"
 
 #define ATOM_SYSTRAY "_NET_SYSTEM_TRAY_S"
 
@@ -45,10 +46,16 @@ enum {
 	SYSTRAY_CANCEL_MESSAGE,
 };
 
+struct _SystemTray {
+	Display *dpy;
+	Window win;
+	list_head items;
+};
+
 static Atom systray_atom;
 
 static int
-systray_get_ownership(TrayWindow *tray)
+systray_get_ownership(SystemTray tray)
 {
 	size_t len = strlen(ATOM_SYSTRAY) + sizeof(int) + 1;
 	char *atomstr = (char *)alloca(len);
@@ -63,14 +70,26 @@ systray_get_ownership(TrayWindow *tray)
 	return 0;
 }
 
-int
-systray_init(TrayWindow *tray)
+/**
+ * systray_new() - Initialize SystemTray object.
+ * @dpy: A display pointer of win.
+ * @win: A window for system tray.
+ *
+ * Return: A new system tray object.
+ */
+SystemTray
+systray_new(Display *dpy, Window win)
 {
+	SystemTray tray = (SystemTray)calloc(1, sizeof(struct _SystemTray));
 	XSetWindowAttributes wattrs;
 	list_head_init(&tray->items);
+	tray->dpy = dpy;
+	tray->win = win;
 
-	if (systray_get_ownership(tray))
-		return -1;
+	if (systray_get_ownership(tray)) {
+		free(tray);
+		return NULL;
+	}
 
 	wattrs.event_mask = ClientMessage;
 	XChangeWindowAttributes(tray->dpy, tray->win, CWEventMask, &wattrs);
@@ -87,7 +106,7 @@ systray_init(TrayWindow *tray)
 
 	XSendEvent(tray->dpy, tray->win, 0, StructureNotifyMask, &ev);
 
-	return 0;
+	return tray;
 }
 
 static int
@@ -111,14 +130,14 @@ xembed_send(Display *dpy, Window win, long message, long d1, long d2, long d3)
 }
 
 static int
-xembed_embedded_notify(TrayWindow *tray, Window win, long version)
+xembed_embedded_notify(SystemTray tray, Window win, long version)
 {
 	return xembed_send(tray->dpy, win, XEMBED_EMBEDDED_NOTIFY, 0, tray->win,
 	                   version);
 }
 
 static int
-xembed_unembed_window(TrayWindow *tray, Window child)
+xembed_unembed_window(SystemTray tray, Window child)
 {
 	XUnmapWindow(tray->dpy, child);
 	XReparentWindow(tray->dpy, child, DefaultRootWindow(tray->dpy), 0, 0);
@@ -128,7 +147,7 @@ xembed_unembed_window(TrayWindow *tray, Window child)
 }
 
 static int
-xembed_getinfo(TrayWindow *tray, Window win, XEmbedInfo *info)
+xembed_getinfo(SystemTray tray, Window win, XEmbedInfo *info)
 {
 	Atom type, infoatom;
 	int format, status;
@@ -151,7 +170,7 @@ xembed_getinfo(TrayWindow *tray, Window win, XEmbedInfo *info)
 }
 
 static TrayItem *
-systray_append_item(TrayWindow *tray, Window win)
+systray_append_item(SystemTray tray, Window win)
 {
 	TrayItem *item = calloc(1, sizeof(TrayItem));
 	item->win = win;
@@ -162,7 +181,7 @@ systray_append_item(TrayWindow *tray, Window win)
 }
 
 static TrayItem *
-systray_find_item(TrayWindow *tray, Window win)
+systray_find_item(SystemTray tray, Window win)
 {
 	list_head *pos;
 	list_for_each(&tray->items, pos) {
@@ -174,7 +193,7 @@ systray_find_item(TrayWindow *tray, Window win)
 }
 
 void
-systray_remove_item(TrayWindow *tray, Window win)
+systray_remove_item(SystemTray tray, Window win)
 {
 	list_head *pos;
 	list_for_each(&tray->items, pos) {
@@ -188,7 +207,7 @@ systray_remove_item(TrayWindow *tray, Window win)
 }
 
 int
-systray_handle(TrayWindow *tray, XEvent ev)
+systray_handle(SystemTray tray, XEvent ev)
 {
 	Atom atom;
 
@@ -239,9 +258,29 @@ systray_handle(TrayWindow *tray, XEvent ev)
 	return 0;
 }
 
-void
-systray_destroy(TrayWindow *tray)
+list_head *
+systray_get_items(SystemTray tray)
 {
+	return &tray->items;
+}
+
+Display *
+systray_get_display(SystemTray tray)
+{
+	return tray->dpy;
+}
+
+Window
+systray_get_window(SystemTray tray)
+{
+	return tray->win;
+}
+
+void
+systray_destroy(SystemTray tray)
+{
+	if (!tray)
+		return;
 	XSetSelectionOwner(tray->dpy, systray_atom, 0, CurrentTime);
 
 	list_head *pos, *tmp;
@@ -251,4 +290,5 @@ systray_destroy(TrayWindow *tray)
 		list_del(pos);
 		free(item);
 	}
+	free(tray);
 }

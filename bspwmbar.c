@@ -1,7 +1,6 @@
 /* See LICENSE file for copyright and license details. */
 
 #if defined(__linux)
-# define _XOPEN_SOURCE 700
 # include <alloca.h>
 # include <sys/epoll.h>
 # include <sys/timerfd.h>
@@ -11,13 +10,10 @@
 # include <sys/event.h>
 # include <sys/time.h>
 #endif
+
+/* common libraries */
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <X11/Xatom.h>
-#include <X11/Xft/Xft.h>
-#include <X11/Xproto.h>
-#include <X11/extensions/Xrandr.h>
-#include <X11/extensions/Xdbe.h>
 #include <locale.h>
 #include <signal.h>
 #include <stdint.h>
@@ -26,7 +22,16 @@
 #include <string.h>
 #include <time.h>
 
+/* X11 */
+#include <X11/Xatom.h>
+#include <X11/Xft/Xft.h>
+#include <X11/Xproto.h>
+#include <X11/extensions/Xrandr.h>
+#include <X11/extensions/Xdbe.h>
+
+/* local headers */
 #include "bspwmbar.h"
+#include "systray.h"
 #include "config.h"
 
 /* bspwm commands */
@@ -34,8 +39,8 @@
 /* epoll max events */
 #define MAX_EVENTS 10
 
+/* temporary buffer */
 char buf[1024];
-char *wintitle = NULL;
 
 static char ascii_table[] =
 	" !\"#$%&'()*+,-./0123456789:;<=>?"
@@ -72,6 +77,7 @@ typedef struct {
 
 typedef struct {
 	const Module *module;
+	DrawAlign align;
 
 	int x, width;
 } Label;
@@ -97,34 +103,32 @@ typedef struct {
 	int x, y, width, height;
 } BarWindow;
 
-typedef struct _DC {
+struct _DC {
 	XdbeSwapInfo swapinfo;
-	BarWindow xbar;
-	GC gc;
-	XftDraw *draw;
-	Drawable buf;
-	DrawAlign align;
-	int x;
+	BarWindow    xbar;
 
-	Label labels[LENGTH(modules)];
-	int nlabel;
-} DrawCtx;
+	GC        gc;
+	XftDraw   *draw;
+	Drawable  buf;
+	DrawAlign align;
+
+	int left_x, right_x;
+
+	Label labels[LENGTH(left_modules) + LENGTH(right_modules)];
+	int   nlabel;
+};
 
 typedef struct {
-	int fd;
+	int     fd;
 	Display *dpy;
-	int scr;
-	XFont font;
-	DrawCtx *dcs;
-	int ndc;
+	int     scr;
+	XFont   font;
+	DC      *dcs;
+	int     ndc;
 } Bspwmbar;
 
 static Bspwmbar bar;
-static TrayWindow tray;
-
-/* cache Atom */
-static Atom filter;
-static Atom xembed_info;
+static SystemTray tray;
 
 static XVisualInfo *visinfo;
 static XftColor cols[LENGTH(colors)];
@@ -134,6 +138,14 @@ static int fcachecap = 0;
 static int celwidth = 0;
 static int xdbe_support = 0;
 
+/* Atom caches */
+static Atom filter;
+static Atom xembed_info;
+
+/* Window title cache */
+static char *wintitle = NULL;
+
+/* polling fd */
 static int pfd = 0;
 #if defined(__linux)
 static struct epoll_event events[MAX_EVENTS];
@@ -146,13 +158,13 @@ static int error_handler(Display *dpy, XErrorEvent *err);
 static int dummy_error_handler(Display *dpy, XErrorEvent *err);
 
 XftColor *
-getcolor(int index)
+get_color(int index)
 {
 	return &cols[index];
 }
 
 static XftColor
-getxftcolor(Display *dpy, int scr, const char *colstr)
+get_xft_color(Display *dpy, int scr, const char *colstr)
 {
 	Colormap cmap = DefaultColormap(dpy, scr);
 	XftColor color;
@@ -165,7 +177,7 @@ static void
 load_colors(Display *dpy, int scr)
 {
 	for (size_t i = 0; i < LENGTH(colors); i++)
-		cols[i] = getxftcolor(dpy, scr, colors[i]);
+		cols[i] = get_xft_color(dpy, scr, colors[i]);
 }
 
 static void
@@ -238,7 +250,7 @@ set_window_prop(Display *dpy, Window win, Atom type, char *property, int mode,
 }
 
 XVisualInfo *
-get_visualinfo(Display *dpy)
+get_visual_info(Display *dpy)
 {
 	if (visinfo)
 		return visinfo;
@@ -265,7 +277,7 @@ get_visualinfo(Display *dpy)
 }
 
 static void
-drawctx_init(DrawCtx *dc, Display *dpy, int scr, int x, int y, int width,
+dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
              int height)
 {
 	XGCValues gcv = { 0 };
@@ -278,7 +290,7 @@ drawctx_init(DrawCtx *dc, Display *dpy, int scr, int x, int y, int width,
 
 	Visual *vis;
 	if (xdbe_support)
-		vis = get_visualinfo(dpy)->visual;
+		vis = get_visual_info(dpy)->visual;
 	else
 		vis = DefaultVisual(dpy, scr);
 	xw->win = XCreateWindow(dpy, RootWindow(dpy, scr), x, y, width, height, 0,
@@ -324,6 +336,23 @@ drawctx_init(DrawCtx *dc, Display *dpy, int scr, int x, int y, int width,
 	xw->height = height;
 }
 
+static int
+dc_get_x(DC dc)
+{
+	if (dc->align == DA_LEFT)
+		return dc->left_x;
+	return dc->xbar.width - dc->right_x;
+}
+
+static void
+dc_move_x(DC dc, int x)
+{
+	if (dc->align == DA_LEFT)
+		dc->left_x += x;
+	else if (dc->align == DA_RIGHT)
+		dc->right_x += x;
+}
+
 static Window
 get_active_window(Display *dpy, int scr)
 {
@@ -350,7 +379,7 @@ get_window_title(Display *dpy, Window win)
 }
 
 static void
-windowtitle_update(Display *dpy, int scr)
+update_window_title(Display *dpy, int scr)
 {
 	Window win;
 	if ((win = get_active_window(dpy, scr))) {
@@ -378,11 +407,11 @@ windowtitle(DC dc, const char *suffix)
 	if (i < strlen(buf))
 		strncpy(&buf[i], suffix, sizeof(buf) - i);
 
-	drawtext(dc, buf);
+	draw_text(dc, buf);
 }
 
 static XftFont *
-getfont(FcChar32 rune)
+get_font(FcChar32 rune)
 {
 	FcResult result;
 	FcPattern *pat, *match;
@@ -420,10 +449,10 @@ getfont(FcChar32 rune)
 		FcPatternAddCharSet(pat, FC_CHARSET, charset);
 		FcPatternAddBool(pat, FC_SCALABLE, 1);
 
-		FcConfigSubstitute(0, pat, FcMatchPattern);
+		FcConfigSubstitute(NULL, pat, FcMatchPattern);
 		FcDefaultSubstitute(pat);
 
-		match = FcFontSetMatch(0, fsets, 1, pat, &result);
+		match = FcFontSetMatch(NULL, fsets, 1, pat, &result);
 		FcPatternDestroy(pat);
 
 		fcaches[nfcache] = XftFontOpenPattern(bar.dpy, match);
@@ -440,7 +469,7 @@ getfont(FcChar32 rune)
 }
 
 static int
-loadfonts(const char *patstr)
+load_fonts(const char *patstr)
 {
 	FcPattern *pat = FcNameParse((FcChar8 *)patstr);
 	if (!pat)
@@ -452,13 +481,13 @@ loadfonts(const char *patstr)
 	FcResult result;
 	FcPattern *match = FcFontMatch(NULL, pat, &result);
 	if (!match) {
-		fprintf(stderr, "loadfonts(): failed parse pattern: %s\n", patstr);
+		err("loadfonts(): failed parse pattern: %s\n", patstr);
 		FcPatternDestroy(pat);
 		return 1;
 	}
 
 	if (!(bar.font.base = XftFontOpenPattern(bar.dpy, match))) {
-		die("loadfonts(): failed open font: %s\n", patstr);
+		err("loadfonts(): failed open font: %s\n", patstr);
 		FcPatternDestroy(pat);
 		FcPatternDestroy(match);
 		return 1;
@@ -471,14 +500,14 @@ loadfonts(const char *patstr)
 }
 
 int
-getdrawwidth(const char *str, XGlyphInfo *extents)
+get_draw_width(const char *str, XGlyphInfo *extents)
 {
 	FcChar32 rune = 0;
 	int width = 0, len = 0;
 	XftFont *font;
 	for (unsigned int i = 0; i < strlen(str); i += len) {
 		len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
-		font = getfont(rune);
+		font = get_font(rune);
 		XftTextExtentsUtf8(bar.dpy, font, (FcChar8 *)&str[i], len, extents);
 		width += extents->x + extents->xOff;
 	}
@@ -486,92 +515,84 @@ getdrawwidth(const char *str, XGlyphInfo *extents)
 }
 
 static void
-drawspace(DC dc, int num)
+draw_padding(DC dc, int num)
 {
-	DrawCtx *dctx = (DrawCtx *)dc;
-	switch ((int)dctx->align) {
+	switch ((int)dc->align) {
 	case DA_LEFT:
-		dctx->x += num;
+		dc->left_x += num;
 		break;
 	case DA_RIGHT:
-		dctx->x -= num;
+		if (!dc->right_x)
+			num += celwidth;
+		dc->right_x += num;
 		break;
 	}
 }
 
 static void
-drawstring(DC dc, XftColor *color, const char *str)
+draw_string(DC dc, XftColor *color, const char *str)
 {
-	DrawCtx *dctx = (DrawCtx *)dc;
 	XGlyphInfo extents = { 0 };
 	FcChar32 rune = 0;
-	int width = 0, len = 0;
+	int len = 0;
 	XftFont *font;
 
-	if (dctx->align == DA_RIGHT)
-		dctx->x -= getdrawwidth(str, &extents);
-
+	int width = get_draw_width(str, &extents);
+	if (dc->align == DA_RIGHT)
+		dc->right_x += width;
+	int x = dc_get_x(dc);
 	int y = (BAR_HEIGHT - bar.font.base->height) / 2 + bar.font.base->ascent;
 	for (unsigned int i = 0; i < strlen(str); i += len) {
 		int len = FcUtf8ToUcs4((FcChar8 *)&str[i], &rune, strlen(str) - i);
-		font = getfont(rune);
+		font = get_font(rune);
 		XftTextExtentsUtf8(bar.dpy, font, (FcChar8 *)&str[i], len, &extents);
-		XftDrawStringUtf8(dctx->draw, color, font, dctx->x + width + extents.x,
+		XftDrawStringUtf8(dc->draw, color, font, x + extents.x,
 		                  y, (FcChar8 *)&str[i], len);
-		width += extents.x + extents.xOff;
+		x += extents.x + extents.xOff;
 		i += len;
 	}
-
-	if (dctx->align == DA_LEFT)
-		dctx->x += width;
+	if (dc->align == DA_LEFT)
+		dc_move_x(dc, width);
 }
 
 void
-drawtext(DC dc, const char *str)
+draw_text(DC dc, const char *str)
 {
-	drawspace(dc, celwidth);
-	drawstring(dc, &cols[FGCOLOR], str);
-	drawspace(dc, celwidth);
+	draw_padding(dc, celwidth);
+	draw_string(dc, &cols[FGCOLOR], str);
+	draw_padding(dc, celwidth);
 }
 
 void
 draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
 {
-	DrawCtx *dctx = (DrawCtx *)dc;
-	XGlyphInfo extents = { 0 };
 	int maxh = bar.font.base->ascent;
 	int basey = (BAR_HEIGHT - bar.font.base->ascent) / 2;
 
-	drawspace(dc, celwidth);
-	DrawAlign align = dctx->align;
-	if (align == DA_RIGHT) {
-		dctx->x -= getdrawwidth(label, &extents);
-		dctx->x -= (celwidth + 1) * nitem;
-		dctx->align = DA_LEFT;
-	}
-	int posx = dctx->x;
-	drawstring(dc, &cols[FGCOLOR], label);
-	drawspace(dc, celwidth);
+	draw_padding(dc, celwidth);
+	int width = (celwidth + 1) * nitem;
+	if (dc->align == DA_RIGHT)
+		dc->right_x += width;
+	int x = dc_get_x(dc) + celwidth;
+	draw_string(dc, &cols[FGCOLOR], label);
+	draw_padding(dc, celwidth);
 	for (int i = 0; i < nitem; i++) {
-		XSetForeground(bar.dpy, dctx->gc, cols[ALTBGCOLOR].pixel);
-		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - celwidth,
+		XSetForeground(bar.dpy, dc->gc, cols[ALTBGCOLOR].pixel);
+		XFillRectangle(bar.dpy, dc->buf, dc->gc, x - celwidth,
 		               basey, celwidth, maxh);
 
 		if (items[i].val < 0)
 			goto CONTINUE;
 
 		int height = SMALLER(BIGGER(maxh * items[i].val, 1), maxh);
-		XSetForeground(bar.dpy, dctx->gc, cols[items[i].colorno].pixel);
-		XFillRectangle(bar.dpy, dctx->buf, dctx->gc, dctx->x - celwidth,
+		XSetForeground(bar.dpy, dc->gc, cols[items[i].colorno].pixel);
+		XFillRectangle(bar.dpy, dc->buf, dc->gc, x - celwidth,
 		               basey + (maxh - height), celwidth, height);
 	CONTINUE:
-		dctx->x += celwidth + 1;
+		x += celwidth + 1;
 	}
-	if (align == DA_RIGHT) {
-		dctx->align = DA_RIGHT;
-		dctx->x = posx;
-	}
-	drawspace(dc, celwidth);
+	if (dc->align == DA_LEFT)
+		dc_move_x(dc, width);
 }
 
 static void
@@ -595,9 +616,9 @@ bspwm_parse(char *report)
 			name[name_len] = '\0';
 			i = j;
 			for (j = 0; j < bar.ndc; j++)
-				if (!strncmp(bar.dcs[j].xbar.monitor.name, name,
+				if (!strncmp(bar.dcs[j]->xbar.monitor.name, name,
 				             strlen(name)))
-					curmon = &bar.dcs[j].xbar.monitor;
+					curmon = &bar.dcs[j]->xbar.monitor;
 			if (curmon)
 				curmon->is_active = (tok == 'M') ? 1 : 0;
 			break;
@@ -633,56 +654,28 @@ bspwm_parse(char *report)
 void
 logo(DC dc, const char *args)
 {
-	DrawCtx *dctx = (DrawCtx *)dc;
-	int pad = 0;
-
-	switch ((int)dctx->align) {
-	case DA_LEFT:
-		pad = celwidth;
-		break;
-	case DA_RIGHT:
-		pad = -celwidth;
-		break;
-	}
-	dctx->x += pad;
-	drawstring(dc, &cols[LOGOCOLOR], args);
-	dctx->x += pad;
-}
-
-void
-float_right(DC dc, const char *arg)
-{
-	(void)arg;
-
-	DrawCtx *dctx = (DrawCtx *)dc;
-	dc->x = dctx->xbar.width - celwidth;
-	dc->align = DA_RIGHT;
+	draw_padding(dc, celwidth);
+	draw_string(dc, &cols[LOGOCOLOR], args);
+	draw_padding(dc, celwidth);
 }
 
 static void
-render_label(DrawCtx *dc)
+render_label(DC dc)
 {
-	int x = 0, width = 0, pad = 0;
+	int x = 0, width = 0;
 
 	for (int j = 0; j < dc->nlabel; j++) {
-		x = dc->x; width = 0; pad = 0;
+		x = dc_get_x(dc); width = 0;
 
+		dc->align = dc->labels[j].align;
 		dc->labels[j].module->func(dc, dc->labels[j].module->arg);
-		switch ((int)dc->align) {
-		case DA_LEFT:
-			width = dc->x - x;
-			pad = celwidth;
-			break;
-		case DA_RIGHT:
-			width = x - dc->x;
-			pad = -celwidth;
-			break;
-		}
-		x = dc->x;
-		if (width) {
+		if (dc->align == DA_LEFT)
+			width = dc_get_x(dc) - x;
+		else if (dc->align == DA_RIGHT)
+			width = x - dc_get_x(dc);
+		x = dc_get_x(dc);
+		if (width)
 			width += celwidth;
-			x = dc->x + pad;
-		}
 		dc->labels[j].width = width;
 		dc->labels[j].x = x;
 	}
@@ -695,23 +688,24 @@ render()
 
 	/* padding width */
 	if (!celwidth)
-		celwidth = getdrawwidth("a", &extents);
+		celwidth = get_draw_width("a", &extents);
 
 	for (int i = 0; i < bar.ndc; i++) {
-		DC dc = (DC)&bar.dcs[i];
-		BarWindow *xw = &bar.dcs[i].xbar;
+		DC dc = bar.dcs[i];
+		BarWindow *xw = &bar.dcs[i]->xbar;
 		dc->align = DA_LEFT;
-		dc->x = 0;
+		dc->left_x = 0;
+		dc->right_x = 0;
 
 		XClearWindow(bar.dpy, xw->win);
 
 		/* render modules */
-		dc->x += celwidth;
+		draw_padding(dc, celwidth);
 		render_label(dc);
 
 		/* swap buffer */
 		if (xdbe_support)
-			XdbeSwapBuffers(bar.dpy, &bar.dcs[i].swapinfo, 1);
+			XdbeSwapBuffers(bar.dpy, &dc->swapinfo, 1);
 	}
 	XFlush(bar.dpy);
 }
@@ -752,12 +746,16 @@ bspwmbar_init(Display *dpy, int scr)
 	int i, j, nmon;
 
 	/* connect bspwm socket */
-	if ((bar.fd = bspwm_connect(dpy, scr)) == -1)
-		die("bspwm_connect(): Failed to connect to the socket\n");
+	if ((bar.fd = bspwm_connect(dpy, scr)) == -1) {
+		err("bspwm_connect(): Failed to connect to the socket\n");
+		return 1;
+	}
 
 	/* get monitors */
 	xrr_mon = XRRGetMonitors(dpy, root, 1, &nmon);
-	bar.dcs = (DrawCtx *)calloc(nmon, sizeof(DrawCtx));
+	bar.dcs = (DC *)calloc(nmon, sizeof(DC));
+	for (i = 0; i < nmon; i++)
+		bar.dcs[i] = (DC)calloc(1, sizeof(struct _DC));
 	bar.ndc = nmon;
 
 	/* create window per monitor */
@@ -768,9 +766,9 @@ bspwmbar_init(Display *dpy, int scr)
 			for (j = 0; j < nmon; j++) {
 				if (xrr_res->outputs[i] != xrr_mon[j].outputs[0])
 					continue;
-				drawctx_init(&bar.dcs[j], dpy, scr, xrr_mon[j].x, 0,
+				dc_init(bar.dcs[j], dpy, scr, xrr_mon[j].x, 0,
 				             xrr_mon[j].width, BAR_HEIGHT);
-				strncpy(bar.dcs[j].xbar.monitor.name, xrr_out->name,
+				strncpy(bar.dcs[j]->xbar.monitor.name, xrr_out->name,
 				        NAME_MAXSZ);
 			}
 		}
@@ -783,20 +781,28 @@ bspwmbar_init(Display *dpy, int scr)
 	bar.dpy = dpy;
 	bar.scr = scr;
 
-	if (loadfonts(fontname))
+	if (load_fonts(fontname))
 		return 1;
-	getdrawwidth(ascii_table, &extents);
+	get_draw_width(ascii_table, &extents);
 
 	/* clear background */
 	for (i = 0; i < bar.ndc; i++) {
-		XClearWindow(dpy, bar.dcs[i].xbar.win);
-		XLowerWindow(dpy, bar.dcs[i].xbar.win);
-		XMapWindow(dpy, bar.dcs[i].xbar.win);
+		XClearWindow(dpy, bar.dcs[i]->xbar.win);
+		XLowerWindow(dpy, bar.dcs[i]->xbar.win);
+		XMapWindow(dpy, bar.dcs[i]->xbar.win);
 
 		/* init labels */
-		bar.dcs[i].nlabel = LENGTH(modules);
-		for (j = 0; j < bar.dcs[i].nlabel; j++)
-			bar.dcs[i].labels[j].module = &modules[j];
+		DC dc = bar.dcs[i];
+		dc->nlabel = LENGTH(left_modules) + LENGTH(right_modules);
+		for (j = 0; j < (int)LENGTH(left_modules); j++) {
+			dc->labels[j].align = DA_LEFT;
+			dc->labels[j].module = &left_modules[j];
+		}
+		int nlabel = j;
+		for (j = 0; nlabel < dc->nlabel; j++, nlabel++) {
+			dc->labels[nlabel].align = DA_RIGHT;
+			dc->labels[nlabel].module = &right_modules[j];
+		}
 	}
 	XFlush(dpy);
 
@@ -819,9 +825,10 @@ bspwmbar_destroy()
 	free(fcaches);
 
 	for (i = 0; i < bar.ndc; i++) {
-		XFreeGC(bar.dpy, bar.dcs[i].gc);
-		XftDrawDestroy(bar.dcs[i].draw);
-		XDestroyWindow(bar.dpy, bar.dcs[i].xbar.win);
+		XFreeGC(bar.dpy, bar.dcs[i]->gc);
+		XftDrawDestroy(bar.dcs[i]->draw);
+		XDestroyWindow(bar.dpy, bar.dcs[i]->xbar.win);
+		free(bar.dcs[i]);
 	}
 	free(bar.dcs);
 	if (xdbe_support)
@@ -839,55 +846,53 @@ workspace(DC dc, const char *args)
 {
 	(void)args;
 	XftColor col;
-	DrawCtx *dctx = (DrawCtx *)dc;
 	const char *ws;
-	int cur, max = dctx->xbar.monitor.nworkspaces;
+	int cur, max = dc->xbar.monitor.nworkspaces;
 
-	drawspace(dc, celwidth);
+	draw_padding(dc, celwidth);
 	for (int i = 0, j = max - 1; i < max; i++, j--) {
-		cur = (dctx->align == DA_RIGHT) ? j : i;
-		drawspace(dc, celwidth / 2);
-		ws = (dctx->xbar.monitor.workspaces[cur].state & STATE_ACTIVE)
+		cur = (dc->align == DA_RIGHT) ? j : i;
+		draw_padding(dc, celwidth / 2);
+		ws = (dc->xbar.monitor.workspaces[cur].state & STATE_ACTIVE)
 		     ? workspace_chars[0]
 		     : workspace_chars[1];
-		col = (dctx->xbar.monitor.workspaces[cur].state == STATE_FREE)
+		col = (dc->xbar.monitor.workspaces[cur].state == STATE_FREE)
 		      ? cols[ALTFGCOLOR]
 		      : cols[FGCOLOR];
-		drawstring(dc, &col, ws);
-		drawspace(dc, celwidth / 2);
+		draw_string(dc, &col, ws);
+		draw_padding(dc, celwidth / 2);
 	}
-	drawspace(dc, celwidth);
+	draw_padding(dc, celwidth);
 }
 
 void
 systray(DC dc, const char *arg)
 {
 	(void)arg;
-	if (list_empty(&tray.items))
+	if (list_empty(systray_get_items(tray)))
 		return;
 
-	DrawCtx *dctx = (DrawCtx *)dc;
-	if (tray.win != dctx->xbar.win)
+	if (systray_get_window(tray) != dc->xbar.win)
 		return;
 
 	XSetErrorHandler(dummy_error_handler);
 
-	drawspace(dc, celwidth);
+	draw_padding(dc, celwidth);
 	list_head *pos;
-	list_for_each(&tray.items, pos) {
+	list_for_each(systray_get_items(tray), pos) {
 		TrayItem *item = list_entry(pos, TrayItem, head);
 		if (!item->info.flags)
 			continue;
-		drawspace(dc, TRAY_ICONSZ);
-		if (item->x != dctx->x) {
-			item->x = dctx->x;
-			XMoveResizeWindow(tray.dpy, item->win, item->x,
+		draw_padding(dc, TRAY_ICONSZ);
+		if (item->x != dc_get_x(dc)) {
+			item->x = dc_get_x(dc);
+			XMoveResizeWindow(bar.dpy, item->win, item->x,
 			                  (BAR_HEIGHT - TRAY_ICONSZ) / 2, TRAY_ICONSZ,
 			                  TRAY_ICONSZ);
 		}
-		drawspace(dc, celwidth);
+		draw_padding(dc, celwidth);
 	}
-	drawspace(dc, celwidth);
+	draw_padding(dc, celwidth);
 
 	XSetErrorHandler(error_handler);
 }
@@ -912,14 +917,14 @@ error_handler(Display *dpy, XErrorEvent *err)
 		}
 		break;
 	default:
-		fprintf(stderr, "Unknown Error Code: %d\n", err->type);
+		err("Unknown Error Code: %d\n", err->type);
 	}
 	XGetErrorText(dpy, err->error_code, buf, sizeof(buf) - 1);
-	fprintf(stderr, "XError: %s\n", buf);
+	err("XError: %s\n", buf);
 	XGetErrorText(dpy, err->request_code, buf, sizeof(buf) - 1);
-	fprintf(stderr, "  MajorCode: %d (%s)\n", err->request_code, buf);
-	fprintf(stderr, "  ResourceID: %ld\n", err->resourceid);
-	fprintf(stderr, "  SerialNumer: %ld\n", err->serial);
+	err("  MajorCode: %d (%s)\n", err->request_code, buf);
+	err("  ResourceID: %ld\n", err->resourceid);
+	err("  SerialNumer: %ld\n", err->serial);
 
 	polling_stop();
 
@@ -965,20 +970,48 @@ poll_del(PollFD *pollfd)
 	}
 }
 
+/**
+ * poll_init() - initialize poll.
+ *
+ * The function must be called before poll_add(), poll_del().
+ */
 static void
 poll_init()
 {
 	list_head_init(&pollfds);
 }
 
+#if defined(__linux)
+/**
+ * timer_reset() - PollUpdateHandler for timer.
+ * @fd: timerfd.
+ *
+ * Return: PollResult
+ *
+ * always - PR_UPDATE
+ */
 static PollResult
 timer_reset(int fd)
 {
 	uint64_t tcnt;
 	read(fd, &tcnt, sizeof(uint64_t));
-	return 1;
+	return PR_UPDATE;
 }
 
+#endif
+/**
+ * bpswm_handle() - bspwm event handling function.
+ * @fd: a file descriptor for bspwm socket.
+ *
+ * This function expects call after bspwm_connect().
+ * Read and parse bspwm report from fd.
+ *
+ * Return: PollResult
+ *
+ * success and not need more action - PR_NOOP
+ * success and need rerendering     - PR_UPDATE
+ * failed to read from fd           - PR_FAILED
+ */
 static PollResult
 bspwm_handle(int fd)
 {
@@ -990,7 +1023,7 @@ bspwm_handle(int fd)
 	if ((len = recv(fd, buf, sizeof(buf) - 1, 0)) > 0) {
 		buf[len] = '\0';
 		if (buf[0] == '\x07') {
-			fprintf(stderr, "bspwm: %s", buf + 1);
+			err("bspwm: %s", buf + 1);
 			return PR_FAILED;
 		}
 		bspwm_parse(buf);
@@ -1002,38 +1035,45 @@ bspwm_handle(int fd)
 	return PR_NOOP;
 }
 
+/*
+ * xev_handle() - X11 event handling
+ * Return: PollResult
+ *
+ * success and not need more action - PR_NOOP
+ * success and need rerendering     - PR_UPDATE
+ */
 static PollResult
 xev_handle()
 {
 	XEvent event;
 	PollResult res = PR_NOOP;
-	DrawCtx *dctx;
+	DC dc;
 
 	/* for X11 events */
 	while (XPending(bar.dpy)) {
 		XNextEvent(bar.dpy, &event);
 		switch (event.type) {
 		case SelectionClear:
-			systray_handle(&tray, event);
+			systray_handle(tray, event);
 			break;
 		case Expose:
 			res = PR_UPDATE;
 			break;
 		case ButtonPress:
-			dctx = NULL;
+			dc = NULL;
 			for (int j = 0; j < bar.ndc; j++)
-				if (bar.dcs[j].xbar.win == event.xbutton.window)
-					dctx = &bar.dcs[j];
-			if (!dctx)
+				if (bar.dcs[j]->xbar.win == event.xbutton.window)
+					dc = bar.dcs[j];
+			if (!dc)
 				break;
 			/* handle evnent */
-			for (int j = 0; j < dctx->nlabel; j++) {
-				if (!dctx->labels[j].module->handler)
+			for (int j = 0; j < dc->nlabel; j++) {
+				if (!dc->labels[j].module->handler)
 					continue;
-				if (dctx->labels[j].x < event.xbutton.x &&
-				    event.xbutton.x < dctx->labels[j].x +
-				    dctx->labels[j].width) {
-					dctx->labels[j].module->handler(event);
+				if (dc->labels[j].x < event.xbutton.x &&
+				    event.xbutton.x < dc->labels[j].x +
+				    dc->labels[j].width) {
+					dc->labels[j].module->handler(event);
 					res = PR_UPDATE;
 					break;
 				}
@@ -1041,18 +1081,18 @@ xev_handle()
 			break;
 		case PropertyNotify:
 			if (event.xproperty.atom == xembed_info) {
-				systray_handle(&tray, event);
+				systray_handle(tray, event);
 			} else if (event.xproperty.atom == filter) {
-				windowtitle_update(bar.dpy, bar.scr);
+				update_window_title(bar.dpy, bar.scr);
 				res = PR_UPDATE;
 			}
 			break;
 		case ClientMessage:
-			systray_handle(&tray, event);
+			systray_handle(tray, event);
 			res = PR_UPDATE;
 			break;
 		case DestroyNotify:
-			systray_remove_item(&tray, event.xdestroywindow.window);
+			systray_remove_item(tray, event.xdestroywindow.window);
 			res = PR_UPDATE;
 			break;
 		}
@@ -1060,6 +1100,10 @@ xev_handle()
 	return res;
 }
 
+/*
+ * poll_loop() - polling loop
+ * @handler: rendering function
+ */
 static void
 poll_loop(void (* handler)())
 {
@@ -1075,9 +1119,6 @@ poll_loop(void (* handler)())
 
 	PollFD timer = { tfd, NULL, NULL, timer_reset, { 0 } };
 	poll_add(&timer);
-#elif defined(__OpenBSD__)
-	/* dummy */
-	(void)timer_reset;
 #endif
 
 	/* polling X11 event for modules */
@@ -1118,7 +1159,7 @@ poll_loop(void (* handler)())
 			/* force render after interval */
 			timerfd_settime(tfd, 0, &interval, NULL);
 #endif
-			windowtitle_update(bar.dpy, bar.scr);
+			update_window_title(bar.dpy, bar.scr);
 			handler();
 		}
 	}
@@ -1140,6 +1181,21 @@ dummy_error_handler(Display *dpy, XErrorEvent *err)
 	(void)dpy;
 	(void)err;
 	return 0;
+}
+
+/**
+ * cleanup() - cleanup resources
+ */
+static void
+cleanup()
+{
+	if (wintitle)
+		XFree(wintitle);
+
+	if (tray)
+		systray_destroy(tray);
+	free_colors(bar.dpy, DefaultScreen(bar.dpy));
+	bspwmbar_destroy();
 }
 
 int
@@ -1171,32 +1227,40 @@ main(int argc, char *argv[])
 #endif
 
 	/* get active widnow title */
-	windowtitle_update(dpy, DefaultScreen(dpy));
+	update_window_title(dpy, DefaultScreen(dpy));
 
 	load_colors(dpy, DefaultScreen(dpy));
 
-	if (bspwmbar_init(dpy, DefaultScreen(dpy)))
-		die("bspwmbar_init(): Failed to init bspwmbar\n");
+	if (bspwmbar_init(dpy, DefaultScreen(dpy))) {
+		err("bspwmbar_init(): Failed to init bspwmbar\n");
+		goto CLEANUP;
+	}
 
 	/* tray initialize */
-	tray.win = bar.dcs[0].xbar.win;
-	tray.dpy = dpy;
 	XSetErrorHandler(dummy_error_handler);
-	if (systray_init(&tray))
-		die("systray_init(): Selection already owned by other window\n");
+	if (!(tray = systray_new(dpy, bar.dcs[0]->xbar.win))) {
+		err("systray_init(): Selection already owned by other window\n");
+		goto CLEANUP;
+	}
 	XSetErrorHandler(error_handler);
 
 	/* subscribe bspwm report */
-	if (bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1)
-		die("bspwm_send(): Failed to send command to bspwm\n");
+	if (bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1) {
+		err("bspwm_send(): Failed to send command to bspwm\n");
+		goto CLEANUP;
+	}
 
 #if defined(__linux)
 	/* epoll */
-	if ((pfd = epoll_create1(0)) == -1)
-		die("epoll_create1(): Failed to create epoll fd\n");
+	if ((pfd = epoll_create1(0)) == -1) {
+		err("epoll_create1(): Failed to create epoll fd\n");
+		goto CLEANUP;
+	}
 #elif defined(__OpenBSD__)
-	if (!(pfd = kqueue()))
-		die("kqueue(): Failed to create kqueue fd\n");
+	if (!(pfd = kqueue())) {
+		err("kqueue(): Failed to create kqueue fd\n");
+		goto CLEANUP;
+	}
 #endif
 
 	/* polling bspwm report */
@@ -1205,7 +1269,7 @@ main(int argc, char *argv[])
 
 	/* polling X11 event for modules */
 	for (int i = 0; i < bar.ndc; i++)
-		XSelectInput(bar.dpy, bar.dcs[i].xbar.win,
+		XSelectInput(bar.dpy, bar.dcs[i]->xbar.win,
 		             ButtonPressMask | ExposureMask);
 
 	/* cache Atom */
@@ -1218,12 +1282,9 @@ main(int argc, char *argv[])
 	/* main loop */
 	poll_loop(render);
 
-	if (wintitle)
-		XFree(wintitle);
-
-	systray_destroy(&tray);
-	bspwmbar_destroy();
-	free_colors(dpy, DefaultScreen(dpy));
+CLEANUP:
+	/* cleanup resources */
+	cleanup();
 
 	return 0;
 }

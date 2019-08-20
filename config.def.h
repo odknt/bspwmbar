@@ -53,14 +53,17 @@ const char *fontname = "sans-serif:size=10";
  * cpugraph       cpu usage per core
  * systray        systray icons
  */
-/* for modules on the right (float: right;) */
-const Module modules[] = {
+/* for modules on the left (float: left;) */
+const Module left_modules[] = {
 	/* function    argument        event handler */
 	/* float: left; */
 	{ logo,        "",           NULL },
 	{ workspace,   NULL,           NULL },
 	{ windowtitle, "…",           NULL },
+};
 
+/* for modules on the right (float: right;) */
+const Module right_modules[] = {
 	/* float: right; */
 	{ float_right, NULL,           NULL },
 	{ datetime,    "%H:%M",        NULL },

@@ -8,7 +8,7 @@ DEPS='x11 xft xrandr xext fontconfig'
 MODS='cpu memory disk thermal datetime'
 
 # debug flags
-CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -DNDEBUG'
+CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -DNDEBUG -D_XOPEN_SOURCE=700'
 LDFLAGS='-s'
 
 # debug flags
