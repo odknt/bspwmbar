@@ -24,5 +24,5 @@ datetime(DC dc, const char *fmt)
 	snprintf(format, size, "%s%s", prefix, fmt);
 	strftime(buf, sizeof(buf), format, tptr);
 
-	drawtext(dc, buf);
+	draw_text(dc, buf);
 }

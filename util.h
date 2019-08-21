@@ -11,9 +11,11 @@
 #define BIGGER(A, B)     ((A) > (B) ? (A) : (B))
 #define DIVCEIL(n, d)    (((n) + ((d) - 1)) / (d))
 
+#define die(...) { fprintf(stderr, __VA_ARGS__); exit(1); }
+#define err(...) { fprintf(stderr, __VA_ARGS__); }
+
 extern char buf[1024];
 
-void die(const char *, ...);
 int pscanf(const char *, const char *, ...);
 
 typedef struct _list_head {
@@ -32,35 +34,9 @@ for (list_head *pos = (head)->next; pos != (head); pos = pos->next) num++
 #define list_for_each_safe(head, pos, n) \
 for (pos = (head)->next, n = pos->next; pos != (head); pos = n, n = pos->next)
 
-static inline void
-list_init(list_head *head, list_head *prev, list_head *next)
-{
-	next->prev = head;
-	head->next = next;
-	head->prev = prev;
-	prev->next = head;
-}
-
-static inline void
-list_add(list_head *head, list_head *entry)
-{
-	list_init(entry, head, head->next);
-}
-
-static inline void
-list_add_tail(list_head *head, list_head *entry)
-{
-	list_init(entry, head->prev, head);
-}
-
-static inline void
-list_del(list_head *head)
-{
-	list_head *prev = head->prev;
-	list_head *next = head->next;
-
-	next->prev = prev;
-	prev->next = next;
-}
+void list_init(list_head *head, list_head *prev, list_head *next);
+void list_add(list_head *head, list_head *entry);
+void list_add_tail(list_head *head, list_head *entry);
+void list_del(list_head *head);
 
 #endif

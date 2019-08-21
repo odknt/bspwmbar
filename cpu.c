@@ -6,6 +6,7 @@
 #include <string.h>
 #include <time.h>
 #if defined(__linux)
+# include <alloca.h>
 # include <sys/sysinfo.h>
 #elif defined(__OpenBSD__)
 # include <sys/types.h>
@@ -15,6 +16,25 @@
 
 #include "bspwmbar.h"
 #include "util.h"
+
+#if defined(__linux)
+typedef struct {
+	double user;
+	double nice;
+	double system;
+	double idle;
+	double iowait;
+	double irq;
+	double softirq;
+	double sum;
+} CoreInfo;
+#elif defined(__OpenBSD__)
+typedef struct {
+	uintmax_t states[CPUSTATES];
+	uintmax_t sum;
+	uintmax_t used;
+} CoreInfo;
+#endif
 
 static int
 num_procs()
@@ -37,8 +57,10 @@ num_procs()
 #endif
 }
 
-int
-cpu_perc(CoreInfo **cores)
+static double *loadavgs = NULL;
+
+static int
+cpu_perc(double **cores)
 {
 	static CoreInfo *a = NULL;
 	static CoreInfo *b = NULL;
@@ -51,7 +73,7 @@ cpu_perc(CoreInfo **cores)
 
 	time_t curtime = time(NULL);
 	if (curtime - prevtime < 1) {
-		*cores = a;
+		*cores = loadavgs;
 		return nproc;
 	}
 	prevtime = curtime;
@@ -60,6 +82,8 @@ cpu_perc(CoreInfo **cores)
 		a = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
 	if (b == NULL)
 		b = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
+	if (loadavgs == NULL)
+		loadavgs = (double *)calloc(sizeof(double), nproc);
 
 	memcpy(b, a, sizeof(CoreInfo) * nproc);
 
@@ -83,7 +107,7 @@ cpu_perc(CoreInfo **cores)
 		double used =
 		  (b[i].user + b[i].nice + b[i].system + b[i].irq + b[i].softirq) -
 		  (a[i].user + a[i].nice + a[i].system + a[i].irq + a[i].softirq);
-		a[i].loadavg = used / (b[i].sum - a[i].sum) * 100 + 0.5;
+		loadavgs[i] = used / (b[i].sum - a[i].sum);
 		i++;
 	}
 	fclose(fp);
@@ -104,12 +128,11 @@ cpu_perc(CoreInfo **cores)
 		            a[i].states[CP_SYS] + a[i].states[CP_INTR] +
 		            a[i].states[CP_IDLE]);
 		a[i].used = a[i].sum - a[i].states[CP_IDLE];
-		a[i].loadavg = (a[i].used - b[i].used) /
-		               (a[i].sum - b[i].sum) * 100 + 5;
+		loadavgs[i] = (a[i].used - b[i].used) / (a[i].sum - b[i].sum);
 	}
 #endif
 
-	*cores = a;
+	*cores = loadavgs;
 	return nproc;
 }
 
@@ -118,7 +141,22 @@ cpugraph(DC dc, const char *arg)
 {
 	(void)arg;
 
-	CoreInfo *cores;
-	int ncore = cpu_perc(&cores);
-	drawcpu(dc, cores, ncore);
+	double *vals = NULL;
+	int ncore = cpu_perc(&vals);
+
+	GraphItem *items = (GraphItem *)alloca(sizeof(GraphItem) * ncore);
+	for (int i = 0; i < ncore; i++) {
+		items[i].val = vals[i];
+		if (vals[i] < 0.3) {
+			items[i].colorno = 4;
+		} else if (vals[i] < 0.6) {
+			items[i].colorno = 5;
+		} else if (vals[i] < 0.8) {
+			items[i].colorno = 6;
+		} else {
+			items[i].colorno = 7;
+		}
+	}
+
+	draw_bargraph(dc, "cpu: ", items, ncore);
 }

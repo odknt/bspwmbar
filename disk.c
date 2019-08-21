@@ -35,5 +35,5 @@ filesystem(DC dc, const char *mpoint)
 {
 	int perc = disk_perc(mpoint);
 	sprintf(buf, " %d％", perc);
-	drawtext(dc, buf);
+	draw_text(dc, buf);
 }

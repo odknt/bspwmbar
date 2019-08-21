@@ -108,7 +108,7 @@ volume(DC dc, const char *args)
 
 	const char *mark = is_muted(fd) ? "婢" : "墳";
 	sprintf(buf, "%s %d％", mark, get_volume(fd) * 100 / 255);
-	drawtext(dc, buf);
+	draw_text(dc, buf);
 
 	close(fd);
 }

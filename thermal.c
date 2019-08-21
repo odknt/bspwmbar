@@ -36,5 +36,5 @@ thermal(DC dc, const char *thermal_path)
 
 DRAW_THERMAL:
 	sprintf(buf, format, temp / 1000);
-	drawtext(dc, buf);
+	draw_text(dc, buf);
 }

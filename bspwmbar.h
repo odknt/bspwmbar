@@ -3,13 +3,8 @@
 #ifndef BSPWMBAR_H_
 #define BSPWMBAR_H_
 
-#include <stdint.h>
 #include <X11/Xlib.h>
 #include <X11/Xft/Xft.h>
-
-#if defined(__OpenBSD__)
-# include <sys/sched.h>
-#endif
 
 #include "util.h"
 
@@ -20,68 +15,33 @@ typedef enum {
 	PR_FAILED
 } PollResult;
 
-#if defined(__linux)
 typedef struct {
-	double user;
-	double nice;
-	double system;
-	double idle;
-	double iowait;
-	double irq;
-	double softirq;
-	double sum;
-	double loadavg;
-} CoreInfo;
-#elif defined(__OpenBSD__)
-typedef struct {
-	uintmax_t states[CPUSTATES];
-	uintmax_t sum;
-	uintmax_t used;
-	double loadavg;
-} CoreInfo;
-#endif
+	double val;
+	int    colorno;
+} GraphItem;
 
-#if defined(__linux)
-typedef struct {
-	size_t total;
-	size_t available;
-} MemInfo;
-#elif defined(__OpenBSD__)
-typedef struct uvmexp MemInfo;
-#endif
-
-typedef struct {
-	unsigned long version;
-	unsigned long flags;
-} XEmbedInfo;
-
-typedef struct _TrayItem {
-	Window win;
-	XEmbedInfo info;
-	int x;
-
-	list_head head;
-} TrayItem;
-
-typedef struct {
-	Display *dpy;
-	Window win;
-	list_head items;
-} TrayWindow;
-
+/* Draw context */
 typedef struct _DC *DC;
 typedef void (* ModuleHandler)(DC, const char *);
 typedef void (* XEventHandler)(XEvent);
 
+/* Poll */
+typedef int (* PollInitHandler)();
+typedef int (* PollDeinitHandler)();
+typedef PollResult (* PollUpdateHandler)();
 typedef struct {
 	int fd;
-	int (* init)(); /* initialize and return fd */
-	int (* deinit)(); /* close fd and cleanup resources */
-	PollResult (* handler)(int); /* event handler for fd */
+	PollInitHandler init; /* initialize and return fd */
+	PollDeinitHandler deinit; /* close fd and cleanup resources */
+	PollUpdateHandler handler; /* event handler for fd */
 
 	list_head head;
 } PollFD;
 
+void poll_add(PollFD *);
+void poll_del(PollFD *);
+
+/* Module */
 typedef struct {
 	ModuleHandler func;
 	const char *arg;
@@ -89,26 +49,8 @@ typedef struct {
 } Module;
 
 XftColor *getcolor(int);
-void drawtext(DC, const char *);
-void drawcpu(DC, CoreInfo *, int);
-void drawmem(DC, int);
-void poll_add(PollFD *);
-void poll_del(PollFD *);
-
-/* cpu.c */
-int cpu_perc(CoreInfo **);
-
-/* mem.c */
-int mem_perc();
-
-/* systray.c */
-int systray_init(TrayWindow *);
-void systray_destroy(TrayWindow *);
-void systray_remove_item(TrayWindow *, Window);
-int systray_handle(TrayWindow *, XEvent);
-
-/* modules for alignment */
-void float_right(DC, const char *);
+void draw_text(DC, const char *);
+void draw_bargraph(DC, const char *, GraphItem *, int);
 
 /* handler */
 void volume_ev(XEvent);
