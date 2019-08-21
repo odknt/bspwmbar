@@ -1444,15 +1444,16 @@ dummy_error_handler(Display *dpy, XErrorEvent *err)
  * cleanup() - cleanup resources
  */
 static void
-cleanup()
+cleanup(Display *dpy)
 {
 	if (wintitle)
 		XFree(wintitle);
 
 	if (tray)
 		systray_destroy(tray);
-	free_colors(bar.dpy, DefaultScreen(bar.dpy));
+	free_colors(dpy, DefaultScreen(dpy));
 	bspwmbar_destroy();
+	XCloseDisplay(dpy);
 }
 
 int
@@ -1540,7 +1541,7 @@ main(int argc, char *argv[])
 
 CLEANUP:
 	/* cleanup resources */
-	cleanup();
+	cleanup(dpy);
 
 	return 0;
 }
