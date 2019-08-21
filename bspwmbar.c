@@ -578,14 +578,16 @@ get_font(FcChar32 rune)
 		FcPatternAddBool(pat, FC_SCALABLE, 1);
 
 		FcConfigSubstitute(NULL, pat, FcMatchPattern);
-		FcDefaultSubstitute(pat);
+		XftDefaultSubstitute(bar.dpy, bar.scr, pat);
 
 		match = FcFontSetMatch(NULL, fsets, 1, pat, &result);
 		FcPatternDestroy(pat);
+		FcCharSetDestroy(charset);
+		if (!match)
+			die("no fonts contain glyph: 0x%x\n", rune);
 
 		fcaches[nfcache] = XftFontOpenPattern(bar.dpy, match);
 		FcPatternDestroy(match);
-		FcCharSetDestroy(charset);
 
 		if (!fcaches[nfcache])
 			die("XftFontOpenPattern(): failed seeking fallback font\n");
@@ -617,19 +619,18 @@ load_fonts(const char *patstr)
 	FcResult result;
 	FcPattern *match = FcFontMatch(NULL, pat, &result);
 	if (!match) {
-		err("loadfonts(): failed parse pattern: %s\n", patstr);
 		FcPatternDestroy(pat);
+		err("loadfonts(): no fonts match pattern: %s\n", patstr);
 		return 1;
 	}
 
-	if (!(bar.font.base = XftFontOpenPattern(bar.dpy, match))) {
-		err("loadfonts(): failed open font: %s\n", patstr);
-		FcPatternDestroy(pat);
-		FcPatternDestroy(match);
-		return 1;
-	}
-
+	bar.font.base = XftFontOpenPattern(bar.dpy, match);
 	FcPatternDestroy(match);
+	if (!bar.font.base) {
+		FcPatternDestroy(pat);
+		err("loadfonts(): failed open font: %s\n", patstr);
+		return 1;
+	}
 
 	bar.font.pattern = pat;
 	return 0;
@@ -1022,6 +1023,7 @@ bspwmbar_destroy()
 
 	close(bar.fd);
 
+	/* font resources */
 	XftFontClose(bar.dpy, bar.font.base);
 	FcPatternDestroy(bar.font.pattern);
 	if (bar.font.set)
@@ -1030,6 +1032,7 @@ bspwmbar_destroy()
 		XftFontClose(bar.dpy, fcaches[i]);
 	free(fcaches);
 
+	/* rendering resources */
 	for (i = 0; i < bar.ndc; i++) {
 		XFreeGC(bar.dpy, bar.dcs[i]->gc);
 		XftDrawDestroy(bar.dcs[i]->draw);
@@ -1459,7 +1462,7 @@ main(int argc, char *argv[])
 	(void)(argv);
 
 	Display *dpy;
-	struct sigaction act, oldact;
+	struct sigaction act = { 0 }, oldact;
 
 	act.sa_handler = &signal_handler;
 	act.sa_flags = 0;

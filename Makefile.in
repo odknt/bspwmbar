@@ -20,7 +20,7 @@ bspwmbar: $(OBJ)
 	$(CC) -o $@ $(OBJ) $(CFLAGS) $(DEPCFLAGS) $(DEPLIBS) $(LDFLAGS)
 
 debug:
-	make CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)"
+	@make CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)"
 .PHONY: debug
 
 $(OBJ): config.h util.h bspwmbar.h
