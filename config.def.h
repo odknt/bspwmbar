@@ -65,7 +65,6 @@ const Module left_modules[] = {
 /* for modules on the right (float: right;) */
 const Module right_modules[] = {
 	/* float: right; */
-	{ float_right, NULL,           NULL },
 	{ datetime,    "%H:%M",        NULL },
 	{ thermal,     THERMAL_PATH,   NULL },
 	{ filesystem,  "/",            NULL },
