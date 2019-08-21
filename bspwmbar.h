@@ -6,10 +6,6 @@
 #include <X11/Xlib.h>
 #include <X11/Xft/Xft.h>
 
-#if defined(__OpenBSD__)
-# include <sys/sched.h>
-#endif
-
 #include "util.h"
 
 typedef enum {

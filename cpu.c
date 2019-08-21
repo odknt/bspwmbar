@@ -1,12 +1,12 @@
 /* See LICENSE file for copyright and license details. */
 
-#include <alloca.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #if defined(__linux)
+# include <alloca.h>
 # include <sys/sysinfo.h>
 #elif defined(__OpenBSD__)
 # include <sys/types.h>

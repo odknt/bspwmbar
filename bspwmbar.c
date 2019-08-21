@@ -1,6 +1,7 @@
 /* See LICENSE file for copyright and license details. */
 
 #if defined(__linux)
+# define _XOPEN_SOURCE 700
 # include <alloca.h>
 # include <sys/epoll.h>
 # include <sys/timerfd.h>
@@ -1463,7 +1464,7 @@ main(int argc, char *argv[])
 	(void)(argv);
 
 	Display *dpy;
-	struct sigaction act = { 0 }, oldact;
+	struct sigaction act, oldact;
 
 	act.sa_handler = &signal_handler;
 	act.sa_flags = 0;
