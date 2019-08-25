@@ -1284,7 +1284,24 @@ bspwm_handle(int fd)
 	return PR_NOOP;
 }
 
-/*
+/**
+ * is_change_active_window_event() - check the event is change active window.
+ *
+ * ev: XEvent
+ *
+ * Return: int
+ * 0 - false
+ * 1 - true
+ */
+static int
+is_change_active_window_event(XEvent ev)
+{
+	Window win = RootWindow(bar.dpy, bar.scr);
+	Atom atom = XInternAtom(bar.dpy, "_NET_ACTIVE_WINDOW", 1);
+	return (ev.xproperty.window == win) && (ev.xproperty.atom == atom);
+}
+
+/**
  * xev_handle() - X11 event handling
  *
  * Return: PollResult
@@ -1331,7 +1348,8 @@ xev_handle()
 		case PropertyNotify:
 			if (event.xproperty.atom == xembed_info) {
 				systray_handle(tray, event);
-			} else if (event.xproperty.atom == filter) {
+			} else if (is_change_active_window_event(event) ||
+			           event.xproperty.atom == filter) {
 				windowtitle_update(bar.dpy, bar.scr);
 				res = PR_UPDATE;
 			}
@@ -1528,6 +1546,12 @@ main(int argc, char *argv[])
 	/* polling bspwm report */
 	PollFD bfd = { bar.fd, NULL, NULL, bspwm_handle, { 0 } };
 	poll_add(&bfd);
+
+	/* wait PropertyNotify events of root window */
+	XSetWindowAttributes attrs;
+	attrs.event_mask = PropertyChangeMask;
+	XChangeWindowAttributes(bar.dpy, XRootWindow(bar.dpy, bar.scr), CWEventMask,
+	                        &attrs);
 
 	/* polling X11 event for modules */
 	for (int i = 0; i < bar.ndc; i++)
