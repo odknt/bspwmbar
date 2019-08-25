@@ -10,20 +10,25 @@
 /* k10temp */
 /* #define THERMAL_PATH "/sys/class/hwmon/hwmon1/temp1_input" */
 
-#define FONT_MAXSZ  3
+/* max length of monitor output name and bspwm desktop name */
 #define NAME_MAXSZ  32
+/* max length of active window title */
 #define TITLE_MAXSZ 50
-#define WS_MAXSZ    5
+/* set window height */
 #define BAR_HEIGHT  24
+/* set tray icon size */
 #define TRAY_ICONSZ 16
-#define BGCOLOR    0
-#define ALTFGCOLOR 1
-#define ALTBGCOLOR 8
-#define FGCOLOR    2
-#define LOGOCOLOR  3
 
-const char *workspace_chars[] = { "", "" };
+/* set font pattern for find fonts, see fonts-conf(5) */
+const char *fontname = "sans-serif:size=10";
 
+/* set strings for uses on render bspwm desktop */
+#define WS_ACTIVE   ""
+#define WS_INACTIVE ""
+
+/*
+ * color map for bspwmbar
+ */
 const char *colors[] = {
 	"#222222", /* black */
 	"#7f7f7f", /* gray */
@@ -38,7 +43,14 @@ const char *colors[] = {
 	"#555555", /* dark gray */
 };
 
-const char *fontname = "sans-serif:size=10";
+/*
+ * color settings by index of color map
+ */
+#define BGCOLOR    0
+#define ALTFGCOLOR 1
+#define ALTBGCOLOR 8
+#define FGCOLOR    2
+#define LOGOCOLOR  3
 
 /*
  * function       description

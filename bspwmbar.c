@@ -88,8 +88,9 @@ typedef struct {
 
 typedef struct {
 	char name[NAME_MAXSZ];
-	Workspace workspaces[WS_MAXSZ];
-	int nworkspaces;
+	Workspace *workspaces;
+	int nworkspace; /* num of workspaces */
+	int cworkspace; /* cap of workspaces */
 	Bool is_active;
 } Monitor;
 
@@ -794,7 +795,7 @@ draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
 static void
 bspwm_parse(char *report)
 {
-	int i, j, nws = 0, name_len;
+	int i, j, name_len, nws = 0;
 	int len = strlen(report);
 	char tok, name[NAME_MAXSZ];
 	Monitor *curmon = NULL;
@@ -812,8 +813,7 @@ bspwm_parse(char *report)
 			name[name_len] = '\0';
 			i = j;
 			for (j = 0; j < bar.ndc; j++)
-				if (!strncmp(bar.dcs[j]->xbar.monitor.name, name,
-				             strlen(name)))
+				if (!strncmp(bar.dcs[j]->xbar.monitor.name, name, strlen(name)))
 					curmon = &bar.dcs[j]->xbar.monitor;
 			if (curmon)
 				curmon->is_active = (tok == 'M') ? 1 : 0;
@@ -824,12 +824,16 @@ bspwm_parse(char *report)
 		case 'F':
 		case 'u':
 		case 'U':
-			nws++;
 			for (j = ++i; j < len; j++)
 				if (report[j] == ':')
 					break;
-			if (curmon)
-				curmon->workspaces[nws - 1].state = ws_state(tok);
+			if (nws + 1 >= curmon->cworkspace) {
+				curmon->cworkspace += 5;
+				curmon->workspaces = realloc(curmon->workspaces,
+				                           sizeof(Workspace) *
+				                           curmon->cworkspace);
+			}
+			curmon->workspaces[nws++].state = ws_state(tok);
 			i = j;
 			break;
 		case 'L':
@@ -838,7 +842,7 @@ bspwm_parse(char *report)
 			break;
 		case 'G':
 			if (curmon)
-				curmon->nworkspaces = nws;
+				curmon->nworkspace = nws;
 			/* skip current node flags. */
 			while (report[i + 1] != ':' && report[i + 1] != '\n')
 				i++;
@@ -1038,6 +1042,7 @@ bspwmbar_destroy()
 		XFreeGC(bar.dpy, bar.dcs[i]->gc);
 		XftDrawDestroy(bar.dcs[i]->draw);
 		XDestroyWindow(bar.dpy, bar.dcs[i]->xbar.win);
+		free(bar.dcs[i]->xbar.monitor.workspaces);
 		free(bar.dcs[i]);
 	}
 	free(bar.dcs);
@@ -1069,15 +1074,15 @@ workspace(DC dc, const char *args)
 	(void)args;
 	XftColor col;
 	const char *ws;
-	int cur, max = dc->xbar.monitor.nworkspaces;
+	int cur, max = dc->xbar.monitor.nworkspace;
 
 	draw_padding(dc, celwidth);
 	for (int i = 0, j = max - 1; i < max; i++, j--) {
 		cur = (dc->align == DA_RIGHT) ? j : i;
 		draw_padding(dc, celwidth / 2.0 + 0.5);
 		ws = (dc->xbar.monitor.workspaces[cur].state & STATE_ACTIVE)
-		     ? workspace_chars[0]
-		     : workspace_chars[1];
+		     ? WS_ACTIVE
+		     : WS_INACTIVE;
 		col = (dc->xbar.monitor.workspaces[cur].state == STATE_FREE)
 		      ? cols[ALTFGCOLOR]
 		      : cols[FGCOLOR];
