@@ -56,7 +56,7 @@ const char *colors[] = {
  * function       description
  *
  * logo           render the given string
- * workspace      bspwm workspaces
+ * desktops       bspwm desktop states
  * windowtitle    active window title
  * datetime       the current time in the given format
  * thermal        temperature of given sensor file
@@ -70,7 +70,7 @@ const Module left_modules[] = {
 	/* function    argument        event handler */
 	/* float: left; */
 	{ logo,        "",           NULL },
-	{ workspace,   NULL,           NULL },
+	{ desktops,    NULL,           NULL },
 	{ windowtitle, "…",           NULL },
 };
 

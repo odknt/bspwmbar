@@ -57,7 +57,7 @@ void volume_ev(XEvent);
 
 /* modules */
 void logo(DC, const char *);
-void workspace(DC, const char *);
+void desktops(DC, const char *);
 void windowtitle(DC, const char *);
 void filesystem(DC, const char *);
 void thermal(DC, const char *);

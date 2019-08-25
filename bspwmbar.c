@@ -84,13 +84,13 @@ typedef int WsState;
 typedef struct {
 	char name[NAME_MAXSZ];
 	WsState state;
-} Workspace;
+} Desktop;
 
 typedef struct {
 	char name[NAME_MAXSZ];
-	Workspace *workspaces;
-	int nworkspace; /* num of workspaces */
-	int cworkspace; /* cap of workspaces */
+	Desktop *desktops;
+	int ndesktop; /* num of desktops */
+	int cdesktop; /* cap of desktops */
 	Bool is_active;
 } Monitor;
 
@@ -213,8 +213,8 @@ free_colors(Display *dpy, int scr)
 }
 
 /**
- * ws_state() - parse char to bspwm workspace state.
- * @s: workspace state char.
+ * ws_state() - parse char to bspwm desktop state.
+ * @s: desktop state char.
  *
  * Retrun: WsState
  * 'o'         - STATE_OCCUPIED
@@ -827,13 +827,12 @@ bspwm_parse(char *report)
 			for (j = ++i; j < len; j++)
 				if (report[j] == ':')
 					break;
-			if (nws + 1 >= curmon->cworkspace) {
-				curmon->cworkspace += 5;
-				curmon->workspaces = realloc(curmon->workspaces,
-				                           sizeof(Workspace) *
-				                           curmon->cworkspace);
+			if (nws + 1 >= curmon->cdesktop) {
+				curmon->cdesktop += 5;
+				curmon->desktops = realloc(curmon->desktops,
+				                           sizeof(Desktop) * curmon->cdesktop);
 			}
-			curmon->workspaces[nws++].state = ws_state(tok);
+			curmon->desktops[nws++].state = ws_state(tok);
 			i = j;
 			break;
 		case 'L':
@@ -842,7 +841,7 @@ bspwm_parse(char *report)
 			break;
 		case 'G':
 			if (curmon)
-				curmon->nworkspace = nws;
+				curmon->ndesktop = nws;
 			/* skip current node flags. */
 			while (report[i + 1] != ':' && report[i + 1] != '\n')
 				i++;
@@ -1042,7 +1041,7 @@ bspwmbar_destroy()
 		XFreeGC(bar.dpy, bar.dcs[i]->gc);
 		XftDrawDestroy(bar.dcs[i]->draw);
 		XDestroyWindow(bar.dpy, bar.dcs[i]->xbar.win);
-		free(bar.dcs[i]->xbar.monitor.workspaces);
+		free(bar.dcs[i]->xbar.monitor.desktops);
 		free(bar.dcs[i]);
 	}
 	free(bar.dcs);
@@ -1064,26 +1063,26 @@ bspwm_send(char *cmd, int len)
 }
 
 /**
- * workspace() - render bspwm workspace states.
+ * desktops() - render bspwm desktop states.
  * @dc: DC.
  * @args: dummy.
  */
 void
-workspace(DC dc, const char *args)
+desktops(DC dc, const char *args)
 {
 	(void)args;
 	XftColor col;
 	const char *ws;
-	int cur, max = dc->xbar.monitor.nworkspace;
+	int cur, max = dc->xbar.monitor.ndesktop;
 
 	draw_padding(dc, celwidth);
 	for (int i = 0, j = max - 1; i < max; i++, j--) {
 		cur = (dc->align == DA_RIGHT) ? j : i;
 		draw_padding(dc, celwidth / 2.0 + 0.5);
-		ws = (dc->xbar.monitor.workspaces[cur].state & STATE_ACTIVE)
+		ws = (dc->xbar.monitor.desktops[cur].state & STATE_ACTIVE)
 		     ? WS_ACTIVE
 		     : WS_INACTIVE;
-		col = (dc->xbar.monitor.workspaces[cur].state == STATE_FREE)
+		col = (dc->xbar.monitor.desktops[cur].state == STATE_FREE)
 		      ? cols[ALTFGCOLOR]
 		      : cols[FGCOLOR];
 		draw_string(dc, &col, ws);
