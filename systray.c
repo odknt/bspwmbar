@@ -52,21 +52,33 @@ struct _SystemTray {
 	list_head items;
 };
 
-static Atom systray_atom;
+static Atom
+get_systray_atom(Display *dpy)
+{
+	static Atom systray_atom = 0;
+	if (systray_atom)
+		return systray_atom;
+	size_t len = strlen(ATOM_SYSTRAY) + sizeof(int) + 1;
+	char *atomstr = (char *)alloca(len);
+	snprintf(atomstr, len, ATOM_SYSTRAY "%d", DefaultScreen(dpy));
+	systray_atom = XInternAtom(dpy, atomstr, 1);
+	return systray_atom;
+}
+
+static void
+set_selection_owner(SystemTray tray, Atom atom)
+{
+	XSetSelectionOwner(tray->dpy, atom, tray->win, CurrentTime);
+}
 
 static int
 systray_get_ownership(SystemTray tray)
 {
-	size_t len = strlen(ATOM_SYSTRAY) + sizeof(int) + 1;
-	char *atomstr = (char *)alloca(len);
-	snprintf(atomstr, len, ATOM_SYSTRAY "%d", DefaultScreen(tray->dpy));
-	systray_atom = XInternAtom(tray->dpy, atomstr, 1);
-
-	if (XGetSelectionOwner(tray->dpy, systray_atom) != None)
+	Atom atom = get_systray_atom(tray->dpy);
+	if (XGetSelectionOwner(tray->dpy, atom) != None)
 		return -1;
 
-	XSetSelectionOwner(tray->dpy, systray_atom, tray->win, CurrentTime);
-
+	set_selection_owner(tray, atom);
 	return 0;
 }
 
@@ -86,6 +98,7 @@ systray_new(Display *dpy, Window win)
 	tray->dpy = dpy;
 	tray->win = win;
 
+
 	if (systray_get_ownership(tray)) {
 		free(tray);
 		return NULL;
@@ -99,7 +112,7 @@ systray_new(Display *dpy, Window win)
 	ev.xclient.message_type = XInternAtom(tray->dpy, "MANAGER", 0);
 	ev.xclient.format = 32;
 	ev.xclient.data.l[0] = CurrentTime;
-	ev.xclient.data.l[1] = systray_atom;
+	ev.xclient.data.l[1] = get_systray_atom(tray->dpy);
 	ev.xclient.data.l[2] = tray->win;
 	ev.xclient.data.l[3] = 0;
 	ev.xclient.data.l[4] = 0;
@@ -213,7 +226,9 @@ systray_handle(SystemTray tray, XEvent ev)
 
 	switch (ev.type) {
 	case SelectionClear:
-		systray_get_ownership(tray);
+		atom = get_systray_atom(tray->dpy);
+		if (ev.xselection.selection == atom)
+			set_selection_owner(tray, get_systray_atom(tray->dpy));
 		break;
 	case ClientMessage:
 		atom = XInternAtom(tray->dpy, "_NET_SYSTEM_TRAY_OPCODE", 0);
@@ -281,7 +296,7 @@ systray_destroy(SystemTray tray)
 {
 	if (!tray)
 		return;
-	XSetSelectionOwner(tray->dpy, systray_atom, 0, CurrentTime);
+	XSetSelectionOwner(tray->dpy, get_systray_atom(tray->dpy), 0, CurrentTime);
 
 	list_head *pos, *tmp;
 	list_for_each_safe(&tray->items, pos, tmp) {
