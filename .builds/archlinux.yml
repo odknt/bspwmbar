@@ -1,0 +1,17 @@
+image: archlinux
+packages:
+  - alsa-lib
+  - libx11
+  - libxft
+  - libxrandr
+  - libxext
+  - fontconfig
+sources:
+  - https://github.com/odknt/bspwmbar
+tasks:
+  - setup: |
+      cd bspwmbar
+      ./configure
+  - build: |
+      cd bspwmbar
+      make
