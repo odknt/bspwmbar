@@ -934,8 +934,8 @@ static int
 bspwm_connect(Display *dpy, int scr)
 {
 	struct sockaddr_un sock;
-	int fd;
-	char *sp = NULL, *host = NULL;
+	int fd, dpyno = 0;
+	char *sp = NULL;
 
 	sock.sun_family = AF_UNIX;
 	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
@@ -945,9 +945,9 @@ bspwm_connect(Display *dpy, int scr)
 	if (sp) {
 		snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", sp);
 	} else {
+		sscanf(DisplayString(dpy), "%*s:%d", &dpyno);
 		snprintf(sock.sun_path, sizeof(sock.sun_path),
-		         "/tmp/bspwm_%i_%i-socket", ConnectionNumber(dpy), scr);
-		free(host);
+		         "/tmp/bspwm_%i_%i-socket", dpyno, scr);
 	}
 	if (connect(fd, (struct sockaddr *)&sock, sizeof(sock)) == -1)
 		return -1;
