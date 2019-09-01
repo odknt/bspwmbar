@@ -941,7 +941,7 @@ parse_display(char *name, char **host, int *dpy, int *scr)
 	++colon;
 	strncpy(*host, name, hostlen);
 	*host[hostlen] = '\0';
-	sscanf(colon, ":%d.%d", dpy, scr);
+	sscanf(colon, "%d.%d", dpy, scr);
 	return 0;
 }
 
