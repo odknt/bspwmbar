@@ -924,17 +924,38 @@ render()
 }
 
 /**
+ * parse_display() - parse DISPLAY environment variable string.
+ * @name: display name format string.
+ * @host: (out) host name.
+ * @dpy: (out) display server number.
+ * @scr: (out) screen number.
+ */
+static int
+parse_display(char *name, char **host, int *dpy, int *scr)
+{
+	char *colon;
+	int hostlen = 0;
+	if (!(colon = strrchr(name, ':')))
+		return 1;
+	hostlen = (colon - name);
+	++colon;
+	strncpy(*host, name, hostlen);
+	*host[hostlen] = '\0';
+	sscanf(colon, ":%d.%d", dpy, scr);
+	return 0;
+}
+
+/**
  * bspwm_connect() - connect to bspwm socket.
  * @dpy: Display pointer.
- * @scr: Screen number.
  *
  * Return: file descripter or -1.
  */
 static int
-bspwm_connect(Display *dpy, int scr)
+bspwm_connect(Display *dpy)
 {
 	struct sockaddr_un sock;
-	int fd, dpyno = 0;
+	int fd, dpyno = 0, scrno = 0;
 	char *sp = NULL;
 
 	sock.sun_family = AF_UNIX;
@@ -945,10 +966,12 @@ bspwm_connect(Display *dpy, int scr)
 	if (sp) {
 		snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", sp);
 	} else {
-		sscanf(DisplayString(dpy), "%*s:%d", &dpyno);
+		sp = alloca(sizeof(sock.sun_path));
+		parse_display(DisplayString(dpy), &sp, &dpyno, &scrno);
 		snprintf(sock.sun_path, sizeof(sock.sun_path),
-		         "/tmp/bspwm_%i_%i-socket", dpyno, scr);
+		         "/tmp/bspwm%s_%i_%i-socket", sp, dpyno, scrno);
 	}
+
 	if (connect(fd, (struct sockaddr *)&sock, sizeof(sock)) == -1)
 		return -1;
 
@@ -956,7 +979,7 @@ bspwm_connect(Display *dpy, int scr)
 }
 
 /**
- * bpswmbar_init() - initialize bspwmbar.
+ * bspwmbar_init() - initialize bspwmbar.
  * @dpy: display pointer.
  * @scr: screen number.
  *
@@ -974,7 +997,7 @@ bspwmbar_init(Display *dpy, int scr)
 	int i, j, nmon;
 
 	/* connect bspwm socket */
-	if ((bar.fd = bspwm_connect(dpy, scr)) == -1) {
+	if ((bar.fd = bspwm_connect(dpy)) == -1) {
 		err("bspwm_connect(): Failed to connect to the socket\n");
 		return 1;
 	}
@@ -1018,7 +1041,7 @@ bspwmbar_init(Display *dpy, int scr)
 }
 
 /**
- * bpswmbar_destroy() - destroy all resources of bspwmbar.
+ * bspwmbar_destroy() - destroy all resources of bspwmbar.
  */
 static void
 bspwmbar_destroy()
@@ -1249,7 +1272,7 @@ timer_reset(int fd)
 
 #endif
 /**
- * bpswm_handle() - bspwm event handling function.
+ * bspwm_handle() - bspwm event handling function.
  * @fd: a file descriptor for bspwm socket.
  *
  * This function expects call after bspwm_connect().
