@@ -226,9 +226,9 @@ static WsState
 ws_state(char s)
 {
 	WsState state = STATE_FREE;
-	if (s == 'o')
+	if ((s | 0x20) == 'o')
 		state = STATE_OCCUPIED;
-	if (s == 'u')
+	if ((s | 0x20) == 'u')
 		state = STATE_URGENT;
 	if (s == 'F' || s == 'U' || s == 'O')
 		return state | STATE_ACTIVE;
