@@ -68,9 +68,9 @@ memgraph(DC dc, const char *arg)
 {
     (void)arg;
     double used = mem_perc();
-    GraphItem items[10];
-    for (int i = 0; i < 10; i++) {
-        items[i].val = (used > ((double)i / 10)) ? 1 : -1;
+    GraphItem items[8];
+    for (int i = 0; i < 8; i++) {
+        items[i].val = (used > ((double)i / 8)) ? 1 : -1;
         if (i < 3)
             items[i].colorno = 4;
         else if (i < 6)
@@ -80,5 +80,5 @@ memgraph(DC dc, const char *arg)
         else
             items[i].colorno = 7;
     }
-    draw_bargraph(dc, " ", items, 10);
+    draw_bargraph(dc, " ", items, 8);
 }
