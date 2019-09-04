@@ -91,7 +91,7 @@ wireless_network(DC dc, const char *interface)
     static char *essid;
     static int link_qual;
     static time_t prevtime;
-    struct wireless_stats ws;
+    static struct wireless_stats ws;
 
     time_t curtime = time(NULL);
     if (curtime - prevtime < 1)
