@@ -158,5 +158,5 @@ cpugraph(DC dc, const char *arg)
         }
     }
 
-    draw_bargraph(dc, "| cpu: ", items, ncore);
+    draw_bargraph(dc, " ", items, ncore);
 }

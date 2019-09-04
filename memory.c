@@ -80,5 +80,5 @@ memgraph(DC dc, const char *arg)
         else
             items[i].colorno = 7;
     }
-    draw_bargraph(dc, "| mem: ", items, 10);
+    draw_bargraph(dc, " ", items, 10);
 }

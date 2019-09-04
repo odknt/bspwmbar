@@ -62,6 +62,7 @@ void windowtitle(DC, const char *);
 void filesystem(DC, const char *);
 void thermal(DC, const char *);
 void battery(DC, const char *);
+void brightness(DC, const char *);
 void volume(DC, const char *);
 void datetime(DC, const char *);
 void cpugraph(DC, const char *);

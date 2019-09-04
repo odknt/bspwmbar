@@ -879,6 +879,9 @@ render_label(DC dc)
         if (dc->align == DA_LEFT)
             width = dc_get_x(dc) - x;
         else if (dc->align == DA_RIGHT)
+            if (j != dc->nlabel -1)
+                // Draw vertical lines between the nodes, except for the last node on the right
+                draw_string(dc, &cols[FGCOLOR], "|");
             width = x - dc_get_x(dc);
         x = dc_get_x(dc);
         if (width)
@@ -898,9 +901,10 @@ render()
 
     /* padding width */
     if (!celwidth) {
-        XftTextExtentsUtf8(bar.dpy, bar.font.base, (FcChar8 *)" ", strlen(" "),
-                           &extents);
-        celwidth = extents.x + extents.xOff;
+        //XftTextExtentsUtf8(bar.dpy, bar.font.base, (FcChar8 *)" ", strlen(" "),
+        //                   &extents);
+        //celwidth = extents.x + extents.xOff;
+        celwidth = 5;
     }
 
     for (int i = 0; i < bar.ndc; i++) {

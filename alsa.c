@@ -157,7 +157,7 @@ volume(DC dc, const char *arg)
         alsa_control(ALSACTL_GETINFO);
 
     const char *mark = (info.unmuted) ? "墳" : "婢";
-    sprintf(buf, "| %s %.0lf％", mark, (double)info.volume / info.max * 100);
+    sprintf(buf, "%s %.0lf%%", mark, (double)info.volume / info.max * 100);
     draw_text(dc, buf);
 }
 

@@ -8,7 +8,7 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static char *format = "| %s%s %d％";
+static char *format = "%s%s %d%%";
 
 
 int get_state(const char *battery, char **state) {

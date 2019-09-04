@@ -11,7 +11,7 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static const char *prefix = "| ";
+static const char *prefix = "";
 
 void
 datetime(DC dc, const char *fmt)

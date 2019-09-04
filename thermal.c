@@ -8,7 +8,7 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static char *format = "|  %d℃";
+static char *format = " %d°C";
 
 void
 thermal(DC dc, const char *thermal_path)

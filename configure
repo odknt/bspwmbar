@@ -4,7 +4,7 @@ PREFIX=/usr/local
 
 PKGCONFIG='pkg-config'
 DEPS='x11 xft xrandr xext fontconfig'
-MODS='cpu memory disk thermal datetime battery wireless_network'
+MODS='cpu memory disk thermal datetime battery wireless_network brightness'
 
 # debug flags
 CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -DNDEBUG'
