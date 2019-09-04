@@ -879,10 +879,12 @@ render_label(DC dc)
         if (dc->align == DA_LEFT)
             width = dc_get_x(dc) - x;
         else if (dc->align == DA_RIGHT)
+        {
             if (j != dc->nlabel -1)
                 // Draw vertical lines between the nodes, except for the last node on the right
                 draw_string(dc, &cols[FGCOLOR], "| ");
             width = x - dc_get_x(dc);
+        }
         x = dc_get_x(dc);
         if (width)
             width += celwidth;
@@ -897,7 +899,7 @@ render_label(DC dc)
 static void
 render()
 {
-    XGlyphInfo extents = { 0 };
+    //XGlyphInfo extents = { 0 };
 
     /* padding width */
     if (!celwidth) {

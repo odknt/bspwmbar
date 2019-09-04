@@ -16,7 +16,7 @@
 struct wireless_stats {
     struct sockaddr addr;
     char name[IFNAMSIZ + 1];
-    char essid[IW_ESSID_MAX_SIZE + 1];
+    char essid[IW_ESSID_MAX_SIZE + 2];
     char mode[16];
     char freq[16];
     int channel;
@@ -63,7 +63,7 @@ static int ya_int_get_wireless_info(struct wireless_stats* ws, const char *dev_n
 
         /* ESSID */
         if (winfo.b.has_essid && winfo.b.essid_on) {
-            snprintf(ws->essid, IW_ESSID_MAX_SIZE+1, "%s", winfo.b.essid);
+            snprintf(ws->essid, IW_ESSID_MAX_SIZE+2, "%s", winfo.b.essid);
         }
 
         /* Channel and Frequency */
@@ -80,7 +80,9 @@ static int ya_int_get_wireless_info(struct wireless_stats* ws, const char *dev_n
     return 0;
 }
 
-static char *airplaine_icon = "";
+//static char *airplaine_icon = "";
+// Todo: Check if rfkill is on and if so show airplaine icon
+
 static char *format = " %s (%d%%)";
 
 void
