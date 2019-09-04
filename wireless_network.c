@@ -81,7 +81,7 @@ static int ya_int_get_wireless_info(struct wireless_stats* ws, const char *dev_n
 }
 
 static char *airplaine_icon = "";
-static char *format = " %s (%d%%)";
+static char *format = " %s (%d%%)";
 
 void
 wireless_network(DC dc, const char *interface)

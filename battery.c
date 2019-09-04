@@ -59,14 +59,18 @@ battery(DC dc, const char *battery)
     switch (capacity) {
         case 0 ... 10:
             // empty
-            symbol = "!";
+            symbol = "!";
             break;
         case 11 ... 19:
             // almost empty
+            symbol = "";
+            break;
+        case 20 ... 34:
+            // 1/3 full
             symbol = "";
             break;
-        case 20 ... 49:
-            // 1/3 full
+        case 35 ... 49:
+            // 1/2 full
             symbol = "";
             break;
         case 50 ... 85:
