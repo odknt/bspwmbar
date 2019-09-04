@@ -8,16 +8,16 @@
 #include "util.h"
 
 typedef struct {
-	unsigned long version;
-	unsigned long flags;
+    unsigned long version;
+    unsigned long flags;
 } XEmbedInfo;
 
 typedef struct _TrayItem {
-	Window win;
-	XEmbedInfo info;
-	int x;
+    Window win;
+    XEmbedInfo info;
+    int x;
 
-	list_head head;
+    list_head head;
 } TrayItem;
 
 /**

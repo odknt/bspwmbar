@@ -11,18 +11,18 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static const char *prefix = " ";
+static const char *prefix = "| ";
 
 void
 datetime(DC dc, const char *fmt)
 {
-	time_t timer = time(NULL);
-	struct tm *tptr = localtime(&timer);
+    time_t timer = time(NULL);
+    struct tm *tptr = localtime(&timer);
 
-	int size = SMALLER(strlen(fmt) + strlen(prefix) + 1, 128);
-	char *format = alloca(size);
-	snprintf(format, size, "%s%s", prefix, fmt);
-	strftime(buf, sizeof(buf), format, tptr);
+    int size = SMALLER(strlen(fmt) + strlen(prefix) + 1, 128);
+    char *format = alloca(size);
+    snprintf(format, size, "%s%s", prefix, fmt);
+    strftime(buf, sizeof(buf), format, tptr);
 
-	draw_text(dc, buf);
+    draw_text(dc, buf);
 }

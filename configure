@@ -1,11 +1,10 @@
 #!/bin/sh
-# vim: st=2 sw=2 sts=2 et
 
 PREFIX=/usr/local
 
 PKGCONFIG='pkg-config'
 DEPS='x11 xft xrandr xext fontconfig'
-MODS='cpu memory disk thermal datetime'
+MODS='cpu memory disk thermal datetime battery wireless_network'
 
 # debug flags
 CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -DNDEBUG'

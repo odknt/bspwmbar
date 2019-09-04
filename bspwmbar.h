@@ -9,15 +9,15 @@
 #include "util.h"
 
 typedef enum {
-	PR_NOOP   =  0,
-	PR_UPDATE,
-	PR_REINIT,
-	PR_FAILED
+    PR_NOOP   =  0,
+    PR_UPDATE,
+    PR_REINIT,
+    PR_FAILED
 } PollResult;
 
 typedef struct {
-	double val;
-	int    colorno;
+    double val;
+    int    colorno;
 } GraphItem;
 
 /* Draw context */
@@ -30,12 +30,12 @@ typedef int (* PollInitHandler)();
 typedef int (* PollDeinitHandler)();
 typedef PollResult (* PollUpdateHandler)();
 typedef struct {
-	int fd;
-	PollInitHandler init; /* initialize and return fd */
-	PollDeinitHandler deinit; /* close fd and cleanup resources */
-	PollUpdateHandler handler; /* event handler for fd */
+    int fd;
+    PollInitHandler init; /* initialize and return fd */
+    PollDeinitHandler deinit; /* close fd and cleanup resources */
+    PollUpdateHandler handler; /* event handler for fd */
 
-	list_head head;
+    list_head head;
 } PollFD;
 
 void poll_add(PollFD *);
@@ -43,9 +43,9 @@ void poll_del(PollFD *);
 
 /* Module */
 typedef struct {
-	ModuleHandler func;
-	const char *arg;
-	XEventHandler handler;
+    ModuleHandler func;
+    const char *arg;
+    XEventHandler handler;
 } Module;
 
 XftColor *getcolor(int);
@@ -61,10 +61,12 @@ void desktops(DC, const char *);
 void windowtitle(DC, const char *);
 void filesystem(DC, const char *);
 void thermal(DC, const char *);
+void battery(DC, const char *);
 void volume(DC, const char *);
 void datetime(DC, const char *);
 void cpugraph(DC, const char *);
 void memgraph(DC, const char *);
 void systray(DC, const char *);
+void wireless_network(DC, const char *);
 
 #endif

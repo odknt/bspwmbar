@@ -19,7 +19,7 @@ extern char buf[1024];
 int pscanf(const char *, const char *, ...);
 
 typedef struct _list_head {
-	struct _list_head *prev, *next;
+    struct _list_head *prev, *next;
 } list_head;
 
 /* list */

@@ -30,17 +30,17 @@ const char *fontname = "sans-serif:size=10";
  * color map for bspwmbar
  */
 const char *colors[] = {
-	"#222222", /* black */
-	"#7f7f7f", /* gray */
-	"#e5e5e5", /* white */
-	"#1793d1", /* logo color */
+    "#222222", /* black */
+    "#7f7f7f", /* gray */
+    "#e5e5e5", /* white */
+    "#1793d1", /* logo color */
 
-	"#449f3d", /* success color */
-	"#2f8419", /* normal color */
-	"#f5a70a", /* warning color */
-	"#ed5456", /* critical color */
+    "#449f3d", /* success color */
+    "#2f8419", /* normal color */
+    "#f5a70a", /* warning color */
+    "#ed5456", /* critical color */
 
-	"#555555", /* dark gray */
+    "#555555", /* dark gray */
 };
 
 /*
@@ -67,23 +67,23 @@ const char *colors[] = {
  */
 /* for modules on the left (float: left;) */
 const Module left_modules[] = {
-	/* function    argument        event handler */
-	/* float: left; */
-	{ logo,        "",           NULL },
-	{ desktops,    NULL,           NULL },
-	{ windowtitle, "…",           NULL },
+    /* function    argument        event handler */
+    /* float: left; */
+    { logo,        "",           NULL },
+    { desktops,    NULL,           NULL },
+    { windowtitle, "…",           NULL },
 };
 
 /* for modules on the right (float: right;) */
 const Module right_modules[] = {
-	/* float: right; */
-	{ datetime,    "%H:%M",        NULL },
-	{ thermal,     THERMAL_PATH,   NULL },
-	{ filesystem,  "/",            NULL },
-	{ volume,      NULL,           volume_ev },
-	{ memgraph,    NULL,           NULL },
-	{ cpugraph,    NULL,           NULL },
-	{ systray,     NULL,           NULL },
+    /* float: right; */
+    { datetime,    "%H:%M",        NULL },
+    { thermal,     THERMAL_PATH,   NULL },
+    { filesystem,  "/",            NULL },
+    { volume,      NULL,           volume_ev },
+    { memgraph,    NULL,           NULL },
+    { cpugraph,    NULL,           NULL },
+    { systray,     NULL,           NULL },
 };
 
 #endif
