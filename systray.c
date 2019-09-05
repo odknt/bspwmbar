@@ -296,7 +296,9 @@ systray_destroy(SystemTray tray)
 {
     if (!tray)
         return;
-    XSetSelectionOwner(tray->dpy, get_systray_atom(tray->dpy), 0, CurrentTime);
+    Atom atom = get_systray_atom(tray->dpy);
+    if (atom)
+        XSetSelectionOwner(tray->dpy, atom, None, CurrentTime);
 
     list_head *pos, *tmp;
     list_for_each_safe(&tray->items, pos, tmp) {

@@ -226,9 +226,9 @@ static WsState
 ws_state(char s)
 {
     WsState state = STATE_FREE;
-    if (s == 'o')
+    if ((s | 0x20) == 'o')
         state = STATE_OCCUPIED;
-    if (s == 'u')
+    if ((s | 0x20) == 'u')
         state = STATE_URGENT;
     if (s == 'F' || s == 'U' || s == 'O')
         return state | STATE_ACTIVE;
@@ -932,7 +932,8 @@ render()
 /**
  * parse_display() - parse DISPLAY environment variable string.
  * @name: display name format string.
- * @host: (out) host name.
+ * @host: (out) host name. Memory for the new string is obtained with malloc(3),
+ *              and must be freed with free().
  * @dpy: (out) display server number.
  * @scr: (out) screen number.
  */
@@ -941,12 +942,14 @@ parse_display(char *name, char **host, int *dpy, int *scr)
 {
     char *colon;
     int hostlen = 0;
+    *host = NULL; *dpy = 0; *scr = 0;
     if (!(colon = strrchr(name, ':')))
         return 1;
     hostlen = (colon - name);
+    if (hostlen < 0)
+        return 1;
     ++colon;
-    strncpy(*host, name, hostlen);
-    *host[hostlen] = '\0';
+    *host = strndup(name, hostlen);
     sscanf(colon, "%d.%d", dpy, scr);
     return 0;
 }
@@ -972,10 +975,11 @@ bspwm_connect(Display *dpy)
     if (sp) {
         snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", sp);
     } else {
-        sp = alloca(sizeof(sock.sun_path));
-        parse_display(DisplayString(dpy), &sp, &dpyno, &scrno);
+        if (parse_display(DisplayString(dpy), &sp, &dpyno, &scrno))
+            return -1;
         snprintf(sock.sun_path, sizeof(sock.sun_path),
                  "/tmp/bspwm%s_%i_%i-socket", sp, dpyno, scrno);
+        free(sp);
     }
 
     if (connect(fd, (struct sockaddr *)&sock, sizeof(sock)) == -1)
