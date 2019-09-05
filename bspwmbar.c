@@ -1192,7 +1192,9 @@ error_handler(Display *dpy, XErrorEvent *err)
     XGetErrorText(dpy, err->error_code, buf, sizeof(buf) - 1);
     err("XError: %s\n", buf);
     XGetErrorText(dpy, err->request_code, buf, sizeof(buf) - 1);
+    err("  ErrorType: %d (%s)\n", err->type, buf);
     err("  MajorCode: %d (%s)\n", err->request_code, buf);
+    err("  MinorCode: %d (%s)\n", err->minor_code, buf);
     err("  ResourceID: %ld\n", err->resourceid);
     err("  SerialNumer: %ld\n", err->serial);
 
@@ -1423,7 +1425,19 @@ poll_loop(void (* handler)())
 
     /* polling fd */
 #if defined(__linux)
-    while ((nfd = epoll_wait(pfd, events, MAX_EVENTS, -1)) != -1) {
+    int terminate = 0;  // Boolean if the code should terminate on epoll_wait -1 return status
+    while (1) {
+        nfd = epoll_wait(pfd, events, MAX_EVENTS, -1);
+        /* When epoll_wait returns -1, an error has occured.
+         * In the case of suspension this happons once, after that the code should continue.
+         * In other cases this re-occurs and the loop should end. */
+        if (nfd == -1) {
+            if (terminate == 1)
+                break;
+            terminate = 1;
+            continue;
+        }
+        terminate = 0;
         need_render = 0;
 #elif defined(__OpenBSD__)
     struct timespec tspec = { 0 };

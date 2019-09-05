@@ -20,7 +20,7 @@ bspwmbar: $(OBJ)
 	$(CC) -o $@ $(OBJ) $(CFLAGS) $(DEPCFLAGS) $(DEPLIBS) $(LDFLAGS)
 
 debug:
-	@make CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)"
+	@make CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)" LSAN_OPTIONS=verbosity=1:log_threads=1
 .PHONY: debug
 
 $(OBJ): config.h util.h bspwmbar.h
@@ -41,6 +41,9 @@ clean:
 
 run: bspwmbar
 	./bspwmbar
+
+run-debug: bspwmbar
+	gdb ./bspwmbar
 
 install:
 	mkdir -p $(DESTDIR)$(BINPREFIX)
