@@ -22,9 +22,14 @@ Currently required [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
 - [x] ALSA volume
 - [x] Memory usage
 - [x] CPU usage per core
+- [x] Backlight
+- [x] Battery
+- [x] Wifi (Used code from yabar)
 - [x] Implements clickable label
 - [x] System Tray support
 - [x] Refactor code
+- [x] Refactor code 2 (tabs replaced by spaces)
+- [x] Restyled
 - [x] OpenBSD support
 - [ ] FreeBSD support
 - [ ] Pulseaudio support (just enough only ALSA support?)
