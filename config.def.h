@@ -7,17 +7,17 @@
 
 /* intel */
 #define THERMAL_PATH "/sys/class/thermal/thermal_zone0/temp"
-#define BACKLIGHT "intel_backlight"
 /* k10temp */
 /* #define THERMAL_PATH "/sys/class/hwmon/hwmon1/temp1_input" */
 
+#define BACKLIGHT "intel_backlight"
 /* for laptops define the battery (/sys/class/power_supply/<battery>) */
 #define BATTERY "BAT1"
 
 /* max length of monitor output name and bspwm desktop name */
 #define NAME_MAXSZ  32
 /* max length of active window title */
-#define TITLE_MAXSZ 50
+#define TITLE_MAXSZ 80
 /* set window height */
 #define BAR_HEIGHT  24
 /* set tray icon size */
@@ -30,31 +30,13 @@ const char *fontname = "MonoSpace:size=10";
 #define WS_ACTIVE   ""
 #define WS_INACTIVE ""
 
-/*
- * color map for bspwmbar
- */
-const char *colors[] = {
-    "#222222", /* black */
-    "#7f7f7f", /* gray */
-    "#e5e5e5", /* white */
-    "#1793d1", /* logo color */
-
-    "#449f3d", /* success color */
-    "#2f8419", /* normal color */
-    "#f5a70a", /* warning color */
-    "#ed5456", /* critical color */
-
-    "#555555", /* dark gray */
-};
-
-/*
- * color settings by index of color map
- */
-#define BGCOLOR    0
-#define ALTFGCOLOR 1
-#define ALTBGCOLOR 8
-#define FGCOLOR    2
-#define LOGOCOLOR  3
+// Available colors: WHITE, BLACK, GRAY, DARK_GRAY, GREEN, BLUE, ORANGE, RED
+typedef int Color;
+const Color BGCOLOR = BLACK;  // Bar background color
+const Color FGCOLOR = WHITE;  // Bar foreground color
+const Color ALTBGCOLOR = DARK_GRAY;  // BarGraph (cpu & mem) background color
+const Color ALTFGCOLOR = GRAY;  // BarGraph (cpu & mem) foreground color
+const Color LOGOCOLOR = BLUE;  // Color of the logo
 
 /*
  * function       description
@@ -71,17 +53,17 @@ const char *colors[] = {
  */
 /* for modules on the left (float: left;) */
 const Module left_modules[] = {
-    /* function    argument        event handler */
+    /* function, argument, event handler */
     /* float: left; */
-    { logo,        "",           NULL },
-    { desktops,    NULL,           NULL },
-    { windowtitle, "…",           NULL },
+    //{ logo, "", NULL }, 
+    { desktops, NULL, NULL }, 
+    { windowtitle, "…", NULL }, 
 };
 
 /* for modules on the right (float: right;) */
 const Module right_modules[] = {
     /* float: right; */
-    { datetime, "%d-%m-%Y  %H:%M", NULL }, 
+    { datetime, "%d-%m-%Y  %H:%M:%S", NULL }, 
     { battery, BATTERY, NULL }, 
     { volume, NULL, volume_ev },
     { brightness, BACKLIGHT, NULL },
@@ -89,8 +71,8 @@ const Module right_modules[] = {
     { thermal, THERMAL_PATH, NULL }, 
     { memgraph, NULL, NULL }, 
     { cpugraph, NULL, NULL }, 
-    { filesystem, "/", NULL }, 
-    { systray, NULL, NULL }, 
+    //{ filesystem, "/", NULL }, 
+    //{ systray, NULL, NULL }, 
 };
 
 #endif

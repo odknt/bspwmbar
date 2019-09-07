@@ -23,7 +23,7 @@ Currently required [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
 - [x] Memory usage
 - [x] CPU usage per core
 - [x] Backlight
-- [x] Battery
+- [x] Battery (Colorized)
 - [x] Wifi (Used code from yabar)
 - [x] Implements clickable label
 - [x] System Tray support
