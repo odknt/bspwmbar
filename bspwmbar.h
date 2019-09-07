@@ -8,6 +8,7 @@
 
 #include "util.h"
 
+
 typedef enum {
     PR_NOOP   =  0,
     PR_UPDATE,
@@ -49,6 +50,7 @@ typedef struct {
 } Module;
 
 XftColor *getcolor(int);
+void draw_colored_text(DC, int, const char *);
 void draw_text(DC, const char *);
 void draw_bargraph(DC, const char *, GraphItem *, int);
 

@@ -4,6 +4,22 @@
 #define BSPWMBAR_UTIL_H_
 #include <unistd.h>
 
+/*
+ * color settings by index of color map
+ */
+extern const char *colors[9];  // Set in utils.c
+typedef enum {
+    WHITE = 0,
+    BLACK,
+    GRAY,
+    DARK_GRAY,
+    LIGHT_GREEN,
+    GREEN,
+    ORANGE,
+    RED,
+    BLUE,
+} Colors;
+
 /* utility macros */
 #define LENGTH(X)        (sizeof (X) / sizeof (X[0]))
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))

@@ -72,13 +72,13 @@ memgraph(DC dc, const char *arg)
     for (int i = 0; i < 8; i++) {
         items[i].val = (used > ((double)i / 8)) ? 1 : -1;
         if (i < 3)
-            items[i].colorno = 4;
+            items[i].colorno = LIGHT_GREEN;
         else if (i < 6)
-            items[i].colorno = 5;
+            items[i].colorno = GREEN;
         else if (i < 8)
-            items[i].colorno = 6;
+            items[i].colorno = ORANGE;
         else
-            items[i].colorno = 7;
+            items[i].colorno = RED;
     }
     draw_bargraph(dc, " ", items, 8);
 }

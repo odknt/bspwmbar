@@ -148,13 +148,13 @@ cpugraph(DC dc, const char *arg)
     for (int i = 0; i < ncore; i++) {
         items[i].val = vals[i];
         if (vals[i] < 0.3) {
-            items[i].colorno = 4;
+            items[i].colorno = LIGHT_GREEN;
         } else if (vals[i] < 0.6) {
-            items[i].colorno = 5;
+            items[i].colorno = GREEN;
         } else if (vals[i] < 0.8) {
-            items[i].colorno = 6;
+            items[i].colorno = ORANGE;
         } else {
-            items[i].colorno = 7;
+            items[i].colorno = RED;
         }
     }
 

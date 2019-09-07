@@ -17,7 +17,7 @@ brightness(DC dc, const char *backlight)
     static time_t prevtime;
     static uintmax_t _brightness, brightness, max_brightness;
 
-    char bpath[128], mpath[128];
+    static char bpath[128], mpath[128];
     snprintf(bpath, 128, "/sys/class/backlight/%s/brightness", backlight);
     snprintf(mpath, 128, "/sys/class/backlight/%s/max_brightness", backlight);
 

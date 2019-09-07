@@ -737,6 +737,20 @@ draw_string(DC dc, XftColor *color, const char *str)
 }
 
 /**
+ * draw_colored_text() - render colored text.
+ * @dc: DC.
+ * @int: color_number.
+ * @str: rendering text.
+ */
+void
+draw_colored_text(DC dc, int color_number, const char *str)
+{
+    draw_padding(dc, celwidth);
+    draw_string(dc, &cols[color_number], str);
+    draw_padding(dc, celwidth);
+}
+
+/**
  * draw_text() - render text.
  * @dc: DC.
  * @str: rendering text.

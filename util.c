@@ -6,6 +6,21 @@
 
 #include "util.h"
 
+/*
+ * color map for bspwmbar
+ */
+const char *colors[9] = {
+    "#e5e5e5", /* white */
+    "#222222", /* black */
+    "#7f7f7f", /* gray */
+    "#555555", /* gray */
+    "#449f3d", /* light green (success) */
+    "#2f8419", /* green (Oke) */
+    "#f5a70a", /* orange (Warning) */
+    "#ed5456", /* red (Critical) */
+    "#1793d1", /* blue (Arch logo color) */
+};
+
 int
 pscanf(const char *path, const char *fmt, ...)
 {
