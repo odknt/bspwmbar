@@ -153,7 +153,6 @@ static struct kevent events[MAX_EVENTS];
 static list_head pollfds;
 
 static int error_handler(Display *dpy, XErrorEvent *err);
-static int dummy_error_handler(Display *dpy, XErrorEvent *err);
 
 /**
  * get_color() - get XftColor pointer by index of color caches.
@@ -356,7 +355,7 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 	BarWindow *xw = &dc->xbar;
 
 	wattrs.background_pixel = cols[BGCOLOR].pixel;
-	wattrs.event_mask = NoEventMask;
+	wattrs.event_mask = ButtonPressMask | ExposureMask;
 
 	Visual *vis;
 	if (xdbe_support)
@@ -389,6 +388,7 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 		dc->buf = XdbeAllocateBackBufferName(dpy, xw->win, XdbeBackground);
 	else
 		dc->buf = xw->win;
+	gcv.graphics_exposures = 1;
 	dc->gc = XCreateGC(dpy, dc->buf, GCGraphicsExposures, &gcv);
 	dc->draw = XftDrawCreate(dpy, dc->buf, vis, DefaultColormap(dpy, scr));
 	dc->swapinfo.swap_window = dc->xbar.win;
@@ -419,7 +419,6 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 	}
 
 	/* send window rendering request */
-	XClearWindow(dpy, xw->win);
 	XLowerWindow(dpy, xw->win);
 	XMapWindow(dpy, xw->win);
 }
@@ -1133,8 +1132,6 @@ systray(DC dc, const char *arg)
 	if (systray_get_window(tray) != dc->xbar.win)
 		return;
 
-	XSetErrorHandler(dummy_error_handler);
-
 	draw_padding(dc, celwidth);
 	list_head *pos;
 	list_for_each(systray_get_items(tray), pos) {
@@ -1151,8 +1148,6 @@ systray(DC dc, const char *arg)
 		draw_padding(dc, celwidth);
 	}
 	draw_padding(dc, celwidth);
-
-	XSetErrorHandler(error_handler);
 }
 
 /**
@@ -1476,21 +1471,6 @@ signal_handler(int signum) {
 }
 
 /**
- * dummy_error_handler() - a dummy X11 error handler.
- * @dpy: dummy.
- * @err: dummy.
- *
- * Return: Always 0.
- */
-static int
-dummy_error_handler(Display *dpy, XErrorEvent *err)
-{
-	(void)dpy;
-	(void)err;
-	return 0;
-}
-
-/**
  * cleanup() - cleanup resources
  */
 static void
@@ -1544,12 +1524,10 @@ main(int argc, char *argv[])
 	}
 
 	/* tray initialize */
-	XSetErrorHandler(dummy_error_handler);
 	if (!(tray = systray_new(dpy, bar.dcs[0]->xbar.win))) {
-		err("systray_init(): Selection already owned by other window\n");
+		err("systray_new(): Selection already owned by other window\n");
 		goto CLEANUP;
 	}
-	XSetErrorHandler(error_handler);
 
 	/* subscribe bspwm report */
 	if (bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1) {
@@ -1580,14 +1558,9 @@ main(int argc, char *argv[])
 	XChangeWindowAttributes(bar.dpy, XRootWindow(bar.dpy, bar.scr), CWEventMask,
 	                        &attrs);
 
-	/* polling X11 event for modules */
-	for (int i = 0; i < bar.ndc; i++)
-		XSelectInput(bar.dpy, bar.dcs[i]->xbar.win,
-		             ButtonPressMask | ExposureMask);
-
 	/* cache Atom */
-	filter = XInternAtom(bar.dpy, "_NET_WM_NAME", 1);
-	xembed_info = XInternAtom(bar.dpy, "_XEMBED_INFO", 1);
+	filter = XInternAtom(bar.dpy, "_NET_WM_NAME", 0);
+	xembed_info = XInternAtom(bar.dpy, "_XEMBED_INFO", 0);
 
 	/* polling initialize for modules */
 	poll_init();

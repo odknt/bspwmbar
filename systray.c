@@ -61,7 +61,7 @@ get_systray_atom(Display *dpy)
 	size_t len = strlen(ATOM_SYSTRAY) + sizeof(int) + 1;
 	char *atomstr = (char *)alloca(len);
 	snprintf(atomstr, len, ATOM_SYSTRAY "%d", DefaultScreen(dpy));
-	systray_atom = XInternAtom(dpy, atomstr, 1);
+	systray_atom = XInternAtom(dpy, atomstr, 0);
 	return systray_atom;
 }
 
@@ -97,7 +97,6 @@ systray_new(Display *dpy, Window win)
 	list_head_init(&tray->items);
 	tray->dpy = dpy;
 	tray->win = win;
-
 
 	if (systray_get_ownership(tray)) {
 		free(tray);
