@@ -355,7 +355,7 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 	BarWindow *xw = &dc->xbar;
 
 	wattrs.background_pixel = cols[BGCOLOR].pixel;
-	wattrs.event_mask = ButtonPressMask | ExposureMask;
+	wattrs.event_mask = NoEventMask;
 
 	Visual *vis;
 	if (xdbe_support)
@@ -1557,6 +1557,11 @@ main(int argc, char *argv[])
 	attrs.event_mask = PropertyChangeMask;
 	XChangeWindowAttributes(bar.dpy, XRootWindow(bar.dpy, bar.scr), CWEventMask,
 	                        &attrs);
+
+	/* polling X11 event for modules */
+	for (int i = 0; i < bar.ndc; i++)
+		XSelectInput(bar.dpy, bar.dcs[i]->xbar.win,
+		             ButtonPressMask | ExposureMask);
 
 	/* cache Atom */
 	filter = XInternAtom(bar.dpy, "_NET_WM_NAME", 0);
