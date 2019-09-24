@@ -160,17 +160,23 @@ alsa_init()
 }
 
 void
-volume(DC dc, const char *arg)
+volume(DC dc, Option opts)
 {
-	(void)arg;
 	if (!pfd.fd)
 		alsa_init();
+
+	if (!opts.prefix)
+		opts.prefix = "";
+	if (!opts.suffix)
+		opts.suffix = "";
 
 	if (!info.volume)
 		alsa_control(ALSACTL_GETINFO);
 
-	const char *mark = (info.unmuted) ? "墳" : "婢";
-	sprintf(buf, "%s %.0lf％", mark, (double)info.volume / info.max * 100);
+	const char *mark = (info.unmuted) ? opts.vol.unmuted : opts.vol.muted;
+	sprintf(buf, "%s%s %.0lf%s", opts.prefix,  mark,
+	                             (double)info.volume / info.max * 100,
+	                             opts.suffix);
 	draw_text(dc, buf);
 }
 

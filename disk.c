@@ -31,9 +31,13 @@ disk_perc(const char *mpoint)
 }
 
 void
-filesystem(DC dc, const char *mpoint)
+filesystem(DC dc, Option opts)
 {
-	int perc = disk_perc(mpoint);
-	sprintf(buf, " %d％", perc);
+	int perc = disk_perc(opts.arg);
+	if (!opts.prefix)
+		opts.prefix = "";
+	if (!opts.suffix)
+		opts.suffix = "";
+	sprintf(buf, "%s%d%s", opts.prefix, perc, opts.suffix);
 	draw_text(dc, buf);
 }

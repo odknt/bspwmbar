@@ -90,7 +90,7 @@ init_devinfo(int fd)
 }
 
 void
-volume(DC dc, const char *args)
+volume(DC dc, Option opts)
 {
 	(void)args;
 
@@ -106,8 +106,14 @@ volume(DC dc, const char *args)
 	if (!initialized)
 		init_devinfo(fd);
 
-	const char *mark = is_muted(fd) ? "婢" : "墳";
-	sprintf(buf, "%s %d％", mark, get_volume(fd) * 100 / 255);
+	if (!opts.prefix)
+		opts.prefix = "";
+	if (!opts.suffix)
+		opts.suffix = "";
+
+	const char *mark = is_muted(fd) ? opts.vol.muted : opts.vol.unmuted;
+	sprintf(buf, "%s%s %d%s", opts.prefix, mark, get_volume(fd) * 100 / 255,
+	                          opts.suffix);
 	draw_text(dc, buf);
 
 	close(fd);

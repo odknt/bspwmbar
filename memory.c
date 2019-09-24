@@ -64,9 +64,8 @@ mem_perc()
 }
 
 void
-memgraph(DC dc, const char *arg)
+memgraph(DC dc, Option opts)
 {
-	(void)arg;
 	double used = mem_perc();
 	GraphItem items[10];
 	for (int i = 0; i < 10; i++) {
@@ -80,5 +79,7 @@ memgraph(DC dc, const char *arg)
 		else
 			items[i].colorno = 7;
 	}
-	draw_bargraph(dc, "mem: ", items, 10);
+	if (!opts.prefix)
+		opts.prefix = "";
+	draw_bargraph(dc, opts.prefix, items, 10);
 }

@@ -20,9 +20,29 @@ typedef struct {
 	int    colorno;
 } GraphItem;
 
+typedef struct {
+	const char *muted;
+	const char *unmuted;
+} VolumeOption;
+
+typedef struct {
+	const char *active;
+	const char *inactive;
+} DesktopOption;
+
+typedef struct {
+	const char *prefix;
+	const char *suffix;
+	union {
+		const char *arg;
+		const VolumeOption vol;
+		const DesktopOption desk;
+	};
+} Option;
+
 /* Draw context */
 typedef struct _DC *DC;
-typedef void (* ModuleHandler)(DC, const char *);
+typedef void (* ModuleHandler)(DC, Option);
 typedef void (* XEventHandler)(XEvent);
 
 /* Poll */
@@ -44,7 +64,7 @@ void poll_del(PollFD *);
 /* Module */
 typedef struct {
 	ModuleHandler func;
-	const char *arg;
+	Option opts;
 	XEventHandler handler;
 } Module;
 
@@ -56,15 +76,15 @@ void draw_bargraph(DC, const char *, GraphItem *, int);
 void volume_ev(XEvent);
 
 /* modules */
-void logo(DC, const char *);
-void desktops(DC, const char *);
-void windowtitle(DC, const char *);
-void filesystem(DC, const char *);
-void thermal(DC, const char *);
-void volume(DC, const char *);
-void datetime(DC, const char *);
-void cpugraph(DC, const char *);
-void memgraph(DC, const char *);
-void systray(DC, const char *);
+void logo(DC, Option);
+void desktops(DC, Option);
+void windowtitle(DC, Option);
+void filesystem(DC, Option);
+void thermal(DC, Option);
+void volume(DC, Option);
+void datetime(DC, Option);
+void cpugraph(DC, Option);
+void memgraph(DC, Option);
+void systray(DC, Option);
 
 #endif

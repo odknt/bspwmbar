@@ -127,6 +127,7 @@ typedef struct {
 
 static Bspwmbar bar;
 static SystemTray tray;
+static PollFD bfd, xfd, timer;
 
 static XVisualInfo *visinfo;
 static Visual *visual;
@@ -354,6 +355,7 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 	XSetWindowAttributes wattrs;
 	XClassHint *hint;
 	BarWindow *xw = &dc->xbar;
+	int i = 0;
 
 	wattrs.background_pixel = cols[BGCOLOR].pixel;
 	wattrs.event_mask = NoEventMask;
@@ -404,12 +406,12 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 
 	/* create labels from modules */
 	dc->nlabel = LENGTH(left_modules) + LENGTH(right_modules);
-	for (int i = 0; i < (int)LENGTH(left_modules); i++) {
+	for (i = 0; i < (int)LENGTH(left_modules); i++) {
 		dc->labels[i].align = DA_LEFT;
 		dc->labels[i].module = &left_modules[i];
 	}
-	int nlabel = LENGTH(left_modules);
-	for (int i = 0; nlabel < dc->nlabel; i++, nlabel++) {
+	int rmlen = LENGTH(right_modules), nlabel = i;
+	for (i = rmlen - 1; i >= 0; i--, nlabel++) {
 		dc->labels[nlabel].align = DA_RIGHT;
 		dc->labels[nlabel].module = &right_modules[i];
 	}
@@ -510,10 +512,10 @@ windowtitle_update(Display *dpy, int scr)
 /**
  * windowtitle() - active window title render function.
  * @dc: DC.
- * @suffix: suffix when substituted long title.
+ * @opts: module options.
  */
 void
-windowtitle(DC dc, const char *suffix)
+windowtitle(DC dc, Option opts)
 {
 	if (!wintitle)
 		return;
@@ -524,7 +526,7 @@ windowtitle(DC dc, const char *suffix)
 	for (size_t len = 0; i < strlen(wintitle) && len < TITLE_MAXSZ; len++)
 		i += FcUtf8ToUcs4((FcChar8 *)&wintitle[i], &dst, strlen(wintitle) - i);
 	if (i < strlen(buf))
-		strncpy(&buf[i], suffix, sizeof(buf) - i);
+		strncpy(&buf[i], opts.arg, sizeof(buf) - i);
 
 	draw_text(dc, buf);
 }
@@ -845,13 +847,13 @@ bspwm_parse(char *report)
 /**
  * logo() - render the specified text.
  * @dc: DC
- * @args: rendering text.
+ * @opts: module options.
  */
 void
-logo(DC dc, const char *args)
+logo(DC dc, Option opts)
 {
 	draw_padding(dc, celwidth);
-	draw_string(dc, &cols[LOGOCOLOR], args);
+	draw_string(dc, &cols[LOGOCOLOR], opts.arg);
 	draw_padding(dc, celwidth);
 }
 
@@ -867,7 +869,7 @@ render_label(DC dc)
 		x = dc_get_x(dc); width = 0;
 
 		dc->align = dc->labels[j].align;
-		dc->labels[j].module->func(dc, dc->labels[j].module->arg);
+		dc->labels[j].module->func(dc, dc->labels[j].module->opts);
 		if (dc->align == DA_LEFT)
 			width = dc_get_x(dc) - x;
 		else if (dc->align == DA_RIGHT)
@@ -1044,6 +1046,7 @@ bspwmbar_destroy()
 {
 	list_head *cur;
 	int i;
+	list_head *pos;
 
 	list_for_each(&pollfds, cur)
 		poll_del(list_entry(cur, PollFD, head));
@@ -1057,6 +1060,10 @@ bspwmbar_destroy()
 		FcFontSetDestroy(bar.font.set);
 	XftFontClose(bar.dpy, bar.font.base);
 	FcPatternDestroy(bar.font.pattern);
+
+	/* deinit modules */
+	list_for_each(&pollfds, pos)
+		poll_del(list_entry(pos, PollFD, head));
 
 	/* rendering resources */
 	for (i = 0; i < bar.ndc; i++) {
@@ -1087,12 +1094,11 @@ bspwm_send(char *cmd, int len)
 /**
  * desktops() - render bspwm desktop states.
  * @dc: DC.
- * @args: dummy.
+ * @opts: module options.
  */
 void
-desktops(DC dc, const char *args)
+desktops(DC dc, Option opts)
 {
-	(void)args;
 	XftColor col;
 	const char *ws;
 	int cur, max = dc->xbar.monitor.ndesktop;
@@ -1102,8 +1108,8 @@ desktops(DC dc, const char *args)
 		cur = (dc->align == DA_RIGHT) ? j : i;
 		draw_padding(dc, celwidth / 2.0 + 0.5);
 		ws = (dc->xbar.monitor.desktops[cur].state & STATE_ACTIVE)
-		     ? WS_ACTIVE
-		     : WS_INACTIVE;
+		     ? opts.desk.active
+		     : opts.desk.inactive;
 		col = (dc->xbar.monitor.desktops[cur].state == STATE_FREE)
 		      ? cols[ALTFGCOLOR]
 		      : cols[FGCOLOR];
@@ -1116,12 +1122,12 @@ desktops(DC dc, const char *args)
 /**
  * systray() - render systray.
  * @dc: draw context.
- * @arg: dummy.
+ * @opts: dummy.
  */
 void
-systray(DC dc, const char *arg)
+systray(DC dc, Option opts)
 {
-	(void)arg;
+	(void)opts;
 	if (list_empty(systray_get_items(tray)))
 		return;
 
@@ -1214,6 +1220,8 @@ poll_add(PollFD *pollfd)
 	if (kevent(pfd, &ev, 1, NULL, 0, NULL) == -1)
 		die("EV_SET(): failed to add to kqueue\n");
 #endif
+
+	list_add_tail(&pollfds, &pollfd->head);
 }
 
 /**
@@ -1233,8 +1241,8 @@ poll_del(PollFD *pollfd)
 		EV_SET(&ev, pollfd->fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
 		kevent(pfd, &ev, 1, NULL, 0, NULL);
 #endif
-		close(pollfd->fd);
 	}
+	list_del(&pollfd->head);
 }
 
 /**
@@ -1402,12 +1410,14 @@ poll_loop(void (* handler)())
 	int tfd = timerfd_create(CLOCK_REALTIME, 0);
 	timerfd_settime(tfd, 0, &interval, NULL);
 
-	PollFD timer = { tfd, NULL, NULL, timer_reset, { 0 } };
+	timer.fd = tfd;
+	timer.handler = timer_reset;
 	poll_add(&timer);
 #endif
 
 	/* polling X11 event for modules */
-	PollFD xfd = { ConnectionNumber(bar.dpy), NULL, NULL, xev_handle, { 0 } };
+	xfd.fd = ConnectionNumber(bar.dpy);
+	xfd.handler = xev_handle;
 	poll_add(&xfd);
 
 	/* polling fd */
@@ -1500,6 +1510,9 @@ main(int argc, char *argv[])
 
 	setlocale(LC_ALL, "");
 
+	/* polling initialize for modules */
+	poll_init();
+
 	if (!(dpy = XOpenDisplay(NULL)))
 		die("XOpenDisplay(): Failed to open display\n");
 	XSetErrorHandler(error_handler);
@@ -1551,7 +1564,8 @@ main(int argc, char *argv[])
 #endif
 
 	/* polling bspwm report */
-	PollFD bfd = { bar.fd, NULL, NULL, bspwm_handle, { 0 } };
+	bfd.fd = bar.fd;
+	bfd.handler = bspwm_handle;
 	poll_add(&bfd);
 
 	/* wait PropertyNotify events of root window */
@@ -1568,9 +1582,6 @@ main(int argc, char *argv[])
 	/* cache Atom */
 	filter = XInternAtom(bar.dpy, "_NET_WM_NAME", 0);
 	xembed_info = XInternAtom(bar.dpy, "_XEMBED_INFO", 0);
-
-	/* polling initialize for modules */
-	poll_init();
 
 	/* main loop */
 	poll_loop(render);

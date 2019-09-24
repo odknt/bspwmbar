@@ -11,17 +11,22 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static const char *prefix = " ";
-
 void
-datetime(DC dc, const char *fmt)
+datetime(DC dc, Option opts)
 {
 	time_t timer = time(NULL);
 	struct tm *tptr = localtime(&timer);
 
-	int size = SMALLER(strlen(fmt) + strlen(prefix) + 1, 128);
+	if (!opts.arg)
+		die("datetime(): arg is required for datetime");
+	if (!opts.prefix)
+		opts.prefix = "";
+	if (!opts.suffix)
+		opts.suffix = "";
+	int size = SMALLER(strlen(opts.arg) + strlen(opts.prefix) +
+	                   strlen(opts.prefix) + 1, 128);
 	char *format = alloca(size);
-	snprintf(format, size, "%s%s", prefix, fmt);
+	snprintf(format, size, "%s%s%s", opts.prefix, opts.arg, opts.suffix);
 	strftime(buf, sizeof(buf), format, tptr);
 
 	draw_text(dc, buf);

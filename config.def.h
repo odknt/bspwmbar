@@ -22,10 +22,6 @@
 /* set font pattern for find fonts, see fonts-conf(5) */
 const char *fontname = "sans-serif:size=10";
 
-/* set strings for uses on render bspwm desktop */
-#define WS_ACTIVE   ""
-#define WS_INACTIVE ""
-
 /*
  * color map for bspwmbar
  */
@@ -46,44 +42,93 @@ const char *colors[] = {
 /*
  * color settings by index of color map
  */
+/* bspwmbar bg color */
 #define BGCOLOR    0
+/* inactive fg color */
 #define ALTFGCOLOR 1
+/* graph bg color */
 #define ALTBGCOLOR 8
+/* general fg color */
 #define FGCOLOR    2
+/* logo color */
 #define LOGOCOLOR  3
 
 /*
- * function       description
+ * Module definition
  *
- * logo           render the given string
- * desktops       bspwm desktop states
- * windowtitle    active window title
- * datetime       the current time in the given format
- * thermal        temperature of given sensor file
- * volume         playback volume
- * memgraph       memory usage
- * cpugraph       cpu usage per core
- * systray        systray icons
+ * function:
+ *   logo           render the given string
+ *   desktops       bspwm desktop states
+ *   windowtitle    active window title
+ *   datetime       the current time in the given format
+ *   thermal        temperature of given sensor file
+ *   volume         playback volume
+ *   memgraph       memory usage
+ *   cpugraph       cpu usage per core
+ *   systray        systray icons
+ *
+ * option:
+ *   prefix         prefix string for module
+ *   suffix         suffix string for module
+ *   arg            string argument for general modules
+ *   vol            argument for volume module
+ *                      muted:   string for muted state
+ *                      unmuted: string for unmuted state
+ *   desk           argument for desktops module
+ *                      active:   string for active state
+ *                      inactive: string for inactive state
+ * handler:
+ *    volume_ev     handle click ButtonPress for voluem control
+ *                      button1: toggle mute/unmute
+ *                      button4: volume up (scroll up)
+ *                      button5: volume down (scroll down)
  */
-/* for modules on the left (float: left;) */
+
+/* modules on the left */
 const Module left_modules[] = {
-	/* function    argument        event handler */
-	/* float: left; */
-	{ logo,        "",           NULL },
-	{ desktops,    NULL,           NULL },
-	{ windowtitle, "…",           NULL },
+	{ /* Arch logo */
+		.func = logo,
+		.opts = { .arg = "" },
+	},
+	{ /* bspwm desktop state */
+		.func = desktops,
+		.opts = { .desk = { .active = "", .inactive = "" } }
+	},
+	{ /* active window title */
+		.func = windowtitle,
+		.opts = { .arg = "…" }
+	},
 };
 
-/* for modules on the right (float: right;) */
+/* modules on the right */
 const Module right_modules[] = {
-	/* float: right; */
-	{ datetime,    "%H:%M",        NULL },
-	{ thermal,     THERMAL_PATH,   NULL },
-	{ filesystem,  "/",            NULL },
-	{ volume,      NULL,           volume_ev },
-	{ memgraph,    NULL,           NULL },
-	{ cpugraph,    NULL,           NULL },
-	{ systray,     NULL,           NULL },
+	{ /* system tray */
+		.func = systray
+	},
+	{ /* cpu usage */
+		.func = cpugraph,
+		.opts = { .prefix = "cpu: " },
+	},
+	{ /* memory usage */
+		.func = memgraph, .opts = { .prefix = "mem: ", },
+	},
+	{ /* master playback volume */
+		.func = volume,
+		.opts = { .suffix = "％", .vol = { .muted = "婢", .unmuted = "墳" } },
+		.handler = volume_ev,
+	},
+	{ /* used space of root file system */
+		.func = filesystem,
+		.opts = { .arg = "/", .prefix = " ", .suffix = "％" },
+	},
+	{ /* cpu temperature */
+		.func = thermal,
+		.opts = { .arg = THERMAL_PATH, .prefix = " ", .suffix = "℃" },
+	},
+	{ /* clock */
+		.func = datetime,
+		.opts = { .prefix = " ", .arg = "%H:%M" },
+	},
 };
 
 #endif

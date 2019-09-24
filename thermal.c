@@ -8,17 +8,15 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static char *format = " %d℃";
-
 void
-thermal(DC dc, const char *thermal_path)
+thermal(DC dc, Option opts)
 {
 	static time_t prevtime;
 	static uintmax_t temp;
 	static int thermal_found = -1;
 
 	if (thermal_found == -1) {
-		if (access(thermal_path, F_OK) != -1)
+		if (access(opts.arg, F_OK) != -1)
 			thermal_found = 1;
 		else
 			thermal_found = 0;
@@ -31,10 +29,14 @@ thermal(DC dc, const char *thermal_path)
 		goto DRAW_THERMAL;
 	prevtime = curtime;
 
-	if (pscanf(thermal_path, "%ju", &temp) == -1)
+	if (pscanf(opts.arg, "%ju", &temp) == -1)
 		return;
 
 DRAW_THERMAL:
-	sprintf(buf, format, temp / 1000);
+	if (!opts.prefix)
+		opts.prefix = "";
+	if (!opts.suffix)
+		opts.suffix = "";
+	sprintf(buf, "%s%ld%s", opts.prefix, temp / 1000, opts.suffix);
 	draw_text(dc, buf);
 }

@@ -137,10 +137,8 @@ cpu_perc(double **cores)
 }
 
 void
-cpugraph(DC dc, const char *arg)
+cpugraph(DC dc, Option opts)
 {
-	(void)arg;
-
 	double *vals = NULL;
 	int ncore = cpu_perc(&vals);
 
@@ -158,5 +156,7 @@ cpugraph(DC dc, const char *arg)
 		}
 	}
 
-	draw_bargraph(dc, "cpu: ", items, ncore);
+	if (!opts.prefix)
+		opts.prefix = "";
+	draw_bargraph(dc, opts.prefix, items, ncore);
 }
