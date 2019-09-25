@@ -22,6 +22,8 @@ typedef struct {
 } AlsaInfo;
 
 static snd_ctl_t *ctl;
+static snd_hctl_t *hctl;
+static snd_mixer_t *mixer;
 static int initialized = 0;
 static AlsaInfo info = { 0 };
 static PollFD pfd = { 0 };
@@ -63,18 +65,16 @@ set_volume(snd_mixer_elem_t *elem, long volume)
 static void
 alsa_control(uint8_t ctlno)
 {
-	snd_mixer_t *h;
 	snd_mixer_selem_id_t *sid;
-
-	snd_mixer_open(&h, 0);
-	snd_mixer_attach(h, "default");
-	snd_mixer_selem_register(h, NULL, NULL);
-	snd_mixer_load(h);
 
 	snd_mixer_selem_id_alloca(&sid);
 	snd_mixer_selem_id_set_index(sid, 0);
 	snd_mixer_selem_id_set_name(sid, "Master");
-	snd_mixer_elem_t *elem = snd_mixer_find_selem(h, sid);
+	snd_mixer_elem_t *elem = snd_mixer_find_selem(mixer, sid);
+	if (!elem) {
+		info.max = 1;
+		return;
+	}
 
 	switch (ctlno) {
 	case ALSACTL_GETINFO:
@@ -90,22 +90,41 @@ alsa_control(uint8_t ctlno)
 		set_volume(elem, info.volume - info.oneper * 5);
 		break;
 	}
-
-	snd_mixer_close(h);
 }
 
 int
 alsa_connect()
 {
-	if (snd_ctl_open(&ctl, "default", SND_CTL_READONLY) < 0)
-		return -1;
-	if (snd_ctl_subscribe_events(ctl, 1))
+	if (snd_ctl_open(&ctl, "default", SND_CTL_READONLY))
 		return -1;
 
-	struct pollfd *pfds = alloca(sizeof(struct pollfd));
-	if (!snd_ctl_poll_descriptors(ctl, pfds, 1))
+	if (snd_ctl_subscribe_events(ctl, 1)) {
+		snd_ctl_close(ctl);
 		return -1;
-	return pfds[0].fd;
+	}
+
+	/* hctl initialization */
+	if (snd_hctl_open_ctl(&hctl, ctl)) {
+		snd_ctl_close(ctl);
+		return -1;
+	}
+
+	/* mixer initialization */
+	if (snd_mixer_open(&mixer, 0)) {
+		snd_ctl_close(ctl);
+		return -1;
+	}
+	snd_mixer_attach_hctl(mixer, hctl);
+	snd_mixer_selem_register(mixer, NULL, NULL);
+	snd_mixer_load(mixer);
+
+	/* get poll fd */
+	struct pollfd *pfds = alloca(sizeof(struct pollfd));
+	if (!snd_ctl_poll_descriptors(ctl, pfds, 1)) {
+		snd_ctl_close(ctl);
+		return -1;
+	}
+	return pfds->fd;
 }
 
 PollResult
@@ -133,7 +152,9 @@ alsa_update(int fd)
 int
 alsa_disconnect()
 {
-	return snd_ctl_close(ctl);
+	int res = snd_ctl_close(ctl);
+	snd_config_update_free_global();
+	return res;
 }
 
 void
