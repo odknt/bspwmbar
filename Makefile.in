@@ -13,6 +13,8 @@ DLDFLAGS =${DLDFLAGS}
 DEPCFLAGS=${DEPCFLAGS}
 DEPLIBS  =${DEPLIBS}
 
+CC=cc
+
 MODS=${MODS}
 OBJ = bspwmbar.o util.o systray.o $(MODS:=.o)
 
