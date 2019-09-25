@@ -25,9 +25,9 @@ static inline double
 calc_used(MemInfo mem)
 {
 #if defined(__linux)
-	return (mem.total - mem.available) / (double)mem.total;
+	return (double)(mem.total - mem.available) / mem.total;
 #elif defined(__OpenBSD__)
-	return mem.active * 100 / mem.npages;
+	return (double)mem.active / mem.npages;
 #endif
 }
 

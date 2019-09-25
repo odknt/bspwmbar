@@ -127,7 +127,10 @@ typedef struct {
 
 static Bspwmbar bar;
 static SystemTray tray;
-static PollFD bfd, xfd, timer;
+static PollFD bfd, xfd;
+#if defined(__linux)
+static PollFD timer;
+#endif
 
 static XVisualInfo *visinfo;
 static Visual *visual;

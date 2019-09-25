@@ -92,8 +92,6 @@ init_devinfo(int fd)
 void
 volume(DC dc, Option opts)
 {
-	(void)args;
-
 	if (!file) {
 		if ((file = getenv("MIXERDEVICE")) == 0 || *file == '\0')
 			file = "/dev/mixer";

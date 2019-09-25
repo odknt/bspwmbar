@@ -12,7 +12,7 @@ void
 thermal(DC dc, Option opts)
 {
 	static time_t prevtime;
-	static uintmax_t temp;
+	static unsigned long temp;
 	static int thermal_found = -1;
 
 	if (thermal_found == -1) {
@@ -37,6 +37,6 @@ DRAW_THERMAL:
 		opts.prefix = "";
 	if (!opts.suffix)
 		opts.suffix = "";
-	sprintf(buf, "%s%ld%s", opts.prefix, temp / 1000, opts.suffix);
+	sprintf(buf, "%s%lu%s", opts.prefix, temp / 1000, opts.suffix);
 	draw_text(dc, buf);
 }
