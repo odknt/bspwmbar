@@ -848,15 +848,15 @@ bspwm_parse(char *report)
 }
 
 /**
- * logo() - render the specified text.
+ * text() - render the specified text.
  * @dc: DC
  * @opts: module options.
  */
 void
-logo(DC dc, Option opts)
+text(DC dc, Option opts)
 {
 	draw_padding(dc, celwidth);
-	draw_string(dc, &cols[LOGOCOLOR], opts.arg);
+	draw_string(dc, &cols[opts.text.color], opts.text.label);
 	draw_padding(dc, celwidth);
 }
 

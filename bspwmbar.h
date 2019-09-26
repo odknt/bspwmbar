@@ -21,14 +21,19 @@ typedef struct {
 } GraphItem;
 
 typedef struct {
-	const char *muted;
-	const char *unmuted;
+	char *muted;
+	char *unmuted;
 } VolumeOption;
 
 typedef struct {
-	const char *active;
-	const char *inactive;
+	char *active;
+	char *inactive;
 } DesktopOption;
+
+typedef struct {
+	int  color;
+	char *label;
+} TextOption;
 
 typedef struct {
 	const char *prefix;
@@ -37,6 +42,7 @@ typedef struct {
 		const char *arg;
 		const VolumeOption vol;
 		const DesktopOption desk;
+		const TextOption text;
 	};
 } Option;
 
@@ -76,7 +82,7 @@ void draw_bargraph(DC, const char *, GraphItem *, int);
 void volume_ev(XEvent);
 
 /* modules */
-void logo(DC, Option);
+void text(DC, Option);
 void desktops(DC, Option);
 void windowtitle(DC, Option);
 void filesystem(DC, Option);

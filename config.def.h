@@ -57,7 +57,7 @@ const char *colors[] = {
  * Module definition
  *
  * function:
- *   logo           render the given string
+ *   text           render the given string
  *   desktops       bspwm desktop states
  *   windowtitle    active window title
  *   datetime       the current time in the given format
@@ -77,6 +77,9 @@ const char *colors[] = {
  *   desk           argument for desktops module
  *                      active:   string for active state
  *                      inactive: string for inactive state
+ *   text           argument for text module
+ *                      label: render string
+ *                      color: render color
  * handler:
  *    volume_ev     handle click ButtonPress for voluem control
  *                      button1: toggle mute/unmute
@@ -87,8 +90,8 @@ const char *colors[] = {
 /* modules on the left */
 const Module left_modules[] = {
 	{ /* Arch logo */
-		.func = logo,
-		.opts = { .arg = "" },
+		.func = text,
+		.opts = { .text = { .label = "", .color = LOGOCOLOR } },
 	},
 	{ /* bspwm desktop state */
 		.func = desktops,
