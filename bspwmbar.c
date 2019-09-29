@@ -588,8 +588,6 @@ get_font(FcChar32 rune)
 			die("no fonts contain glyph: 0x%x\n", rune);
 
 		fcaches[nfcache] = XftFontOpenPattern(bar.dpy, match);
-		FcPatternDestroy(match);
-
 		if (!fcaches[nfcache])
 			die("XftFontOpenPattern(): failed seeking fallback font\n");
 
@@ -626,7 +624,6 @@ load_fonts(const char *patstr)
 	}
 
 	bar.font.base = XftFontOpenPattern(bar.dpy, match);
-	FcPatternDestroy(match);
 	if (!bar.font.base) {
 		FcPatternDestroy(pat);
 		err("loadfonts(): failed open font: %s\n", patstr);
@@ -1049,18 +1046,21 @@ bspwmbar_init(Display *dpy, int scr)
 static void
 bspwmbar_destroy()
 {
+	list_head *cur;
 	int i;
 
-	close(bar.fd);
+	list_for_each(&pollfds, cur)
+		poll_del(list_entry(cur, PollFD, head));
 
 	/* font resources */
-	XftFontClose(bar.dpy, bar.font.base);
-	FcPatternDestroy(bar.font.pattern);
-	if (bar.font.set)
-		FcFontSetDestroy(bar.font.set);
 	for (i = 0; i < nfcache; i++)
 		XftFontClose(bar.dpy, fcaches[i]);
-	free(fcaches);
+	if (fcaches)
+		free(fcaches);
+	if (bar.font.set)
+		FcFontSetDestroy(bar.font.set);
+	XftFontClose(bar.dpy, bar.font.base);
+	FcPatternDestroy(bar.font.pattern);
 
 	/* rendering resources */
 	for (i = 0; i < bar.ndc; i++) {
@@ -1072,15 +1072,7 @@ bspwmbar_destroy()
 	}
 	free(bar.dcs);
 	if (xdbe_support)
-		free(visinfo);
-
-	list_head *cur;
-	list_for_each(&pollfds, cur) {
-		PollFD *p = list_entry(cur, PollFD, head);
-		poll_del(p);
-		if (p->fd != ConnectionNumber(bar.dpy))
-			close(p->fd);
-	}
+		XFree(visinfo);
 }
 
 /**
@@ -1492,6 +1484,7 @@ cleanup(Display *dpy)
 	free_colors(dpy, DefaultScreen(dpy));
 	bspwmbar_destroy();
 	XCloseDisplay(dpy);
+	FcFini();
 }
 
 int
@@ -1501,12 +1494,13 @@ main(int argc, char *argv[])
 	(void)(argv);
 
 	Display *dpy;
-	struct sigaction act, oldact;
+	struct sigaction act;
 
+	sigemptyset(&act.sa_mask);
 	act.sa_handler = &signal_handler;
 	act.sa_flags = 0;
-	sigaction(SIGTERM, &act, &oldact);
-	sigaction(SIGINT, &act, &oldact);
+	sigaction(SIGTERM, &act, NULL);
+	sigaction(SIGINT, &act, NULL);
 
 	setlocale(LC_ALL, "");
 
