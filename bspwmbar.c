@@ -1073,6 +1073,14 @@ bspwmbar_destroy()
 	free(bar.dcs);
 	if (xdbe_support)
 		free(visinfo);
+
+	list_head *cur;
+	list_for_each(&pollfds, cur) {
+		PollFD *p = list_entry(cur, PollFD, head);
+		poll_del(p);
+		if (p->fd != ConnectionNumber(bar.dpy))
+			close(p->fd);
+	}
 }
 
 /**

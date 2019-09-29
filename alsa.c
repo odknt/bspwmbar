@@ -22,7 +22,6 @@ typedef struct {
 } AlsaInfo;
 
 static snd_ctl_t *ctl;
-static snd_hctl_t *hctl;
 static snd_mixer_t *mixer;
 static int initialized = 0;
 static AlsaInfo info = { 0 };
@@ -65,13 +64,13 @@ set_volume(snd_mixer_elem_t *elem, long volume)
 static void
 alsa_control(uint8_t ctlno)
 {
-	snd_mixer_selem_id_t *sid;
+	snd_mixer_elem_t *elem = NULL;
+	snd_mixer_selem_id_t *sid = NULL;
 
 	snd_mixer_selem_id_alloca(&sid);
 	snd_mixer_selem_id_set_index(sid, 0);
 	snd_mixer_selem_id_set_name(sid, "Master");
-	snd_mixer_elem_t *elem = snd_mixer_find_selem(mixer, sid);
-	if (!elem) {
+	if (!(elem = snd_mixer_find_selem(mixer, sid))) {
 		info.max = 1;
 		return;
 	}
@@ -95,16 +94,10 @@ alsa_control(uint8_t ctlno)
 int
 alsa_connect()
 {
-	if (snd_ctl_open(&ctl, "default", SND_CTL_READONLY))
+	if (snd_ctl_open(&ctl, "default", SND_CTL_READONLY | SND_CTL_NONBLOCK))
 		return -1;
 
 	if (snd_ctl_subscribe_events(ctl, 1)) {
-		snd_ctl_close(ctl);
-		return -1;
-	}
-
-	/* hctl initialization */
-	if (snd_hctl_open_ctl(&hctl, ctl)) {
 		snd_ctl_close(ctl);
 		return -1;
 	}
@@ -114,7 +107,7 @@ alsa_connect()
 		snd_ctl_close(ctl);
 		return -1;
 	}
-	snd_mixer_attach_hctl(mixer, hctl);
+	snd_mixer_attach(mixer, "default");
 	snd_mixer_selem_register(mixer, NULL, NULL);
 	snd_mixer_load(mixer);
 
@@ -139,8 +132,9 @@ alsa_update(int fd)
 	if (snd_ctl_event_get_type(event) != SND_CTL_EVENT_ELEM)
 		return PR_NOOP;
 
-	unsigned int mask = snd_ctl_event_elem_get_mask(event);
+	snd_mixer_handle_events(mixer);
 
+	unsigned int mask = snd_ctl_event_elem_get_mask(event);
 	if (!(mask & SND_CTL_EVENT_MASK_VALUE))
 		return PR_NOOP;
 
@@ -152,9 +146,7 @@ alsa_update(int fd)
 int
 alsa_disconnect()
 {
-	int res = snd_ctl_close(ctl);
-	snd_config_update_free_global();
-	return res;
+	return snd_ctl_close(ctl);
 }
 
 void
