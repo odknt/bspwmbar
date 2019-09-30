@@ -129,6 +129,7 @@ static Bspwmbar bar;
 static SystemTray tray;
 
 static XVisualInfo *visinfo;
+static Visual *visual;
 static XftColor cols[LENGTH(colors)];
 static XftFont **fcaches;
 static int nfcache = 0;
@@ -182,7 +183,7 @@ load_xft_color(Display *dpy, int scr, const char *colstr)
 	Colormap cmap = DefaultColormap(dpy, scr);
 	XftColor color;
 
-	XftColorAllocName(dpy, DefaultVisual(dpy, scr), cmap, colstr, &color);
+	XftColorAllocName(dpy, visual, cmap, colstr, &color);
 	return color;
 }
 
@@ -208,7 +209,7 @@ free_colors(Display *dpy, int scr)
 {
 	Colormap cmap = DefaultColormap(dpy, scr);
 	for (size_t i = 0; i < LENGTH(colors); i++)
-		XftColorFree(dpy, DefaultVisual(dpy, scr), cmap, &cols[i]);
+		XftColorFree(dpy, visual, cmap, &cols[i]);
 }
 
 /**
@@ -357,13 +358,8 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 	wattrs.background_pixel = cols[BGCOLOR].pixel;
 	wattrs.event_mask = NoEventMask;
 
-	Visual *vis;
-	if (xdbe_support)
-		vis = get_visual_info(dpy)->visual;
-	else
-		vis = DefaultVisual(dpy, scr);
 	xw->win = XCreateWindow(dpy, RootWindow(dpy, scr), x, y, width, height, 0,
-	                        CopyFromParent, CopyFromParent, vis,
+	                        CopyFromParent, CopyFromParent, visual,
 	                        CWBackPixel | CWEventMask, &wattrs);
 
 	/* set window type */
@@ -390,7 +386,7 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 		dc->buf = xw->win;
 	gcv.graphics_exposures = 1;
 	dc->gc = XCreateGC(dpy, dc->buf, GCGraphicsExposures, &gcv);
-	dc->draw = XftDrawCreate(dpy, dc->buf, vis, DefaultColormap(dpy, scr));
+	dc->draw = XftDrawCreate(dpy, dc->buf, visual, DefaultColormap(dpy, scr));
 	dc->swapinfo.swap_window = dc->xbar.win;
 	dc->swapinfo.swap_action = XdbeBackground;
 
@@ -1518,6 +1514,10 @@ main(int argc, char *argv[])
 	/* get active widnow title */
 	windowtitle_update(dpy, DefaultScreen(dpy));
 
+	if (xdbe_support)
+		visual = get_visual_info(dpy)->visual;
+	else
+		visual = DefaultVisual(dpy, DefaultScreen(dpy));
 	load_colors(dpy, DefaultScreen(dpy));
 
 	if (bspwmbar_init(dpy, DefaultScreen(dpy))) {
