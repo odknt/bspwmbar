@@ -36,6 +36,14 @@ typedef struct {
 } CoreInfo;
 #endif
 
+static const char *deffgcols[4] = {
+	"#449f3d", /* success color */
+	"#2f8419", /* normal color */
+	"#f5a70a", /* warning color */
+	"#ed5456", /* critical color */
+};
+static double *loadavgs = NULL;
+
 static int
 num_procs()
 {
@@ -56,8 +64,6 @@ num_procs()
 	return nproc;
 #endif
 }
-
-static double *loadavgs = NULL;
 
 static int
 cpu_perc(double **cores)
@@ -139,20 +145,31 @@ cpu_perc(double **cores)
 void
 cpugraph(DC dc, Option opts)
 {
+	Color fgcols[4];
+	Color bgcol;
 	double *vals = NULL;
-	int ncore = cpu_perc(&vals);
+	int i, ncore = cpu_perc(&vals);
+
+	bgcol = color_load("#555555");
+	for (i = 0; i < 4; i++) {
+		if (opts.cpu.cols[i])
+			fgcols[i] = color_load(opts.cpu.cols[i]);
+		else
+			fgcols[i] = color_load(deffgcols[i]);
+	}
 
 	GraphItem *items = (GraphItem *)alloca(sizeof(GraphItem) * ncore);
 	for (int i = 0; i < ncore; i++) {
+		items[i].bg = bgcol;
 		items[i].val = vals[i];
 		if (vals[i] < 0.3) {
-			items[i].colorno = 4;
+			items[i].fg = fgcols[0];
 		} else if (vals[i] < 0.6) {
-			items[i].colorno = 5;
+			items[i].fg = fgcols[1];
 		} else if (vals[i] < 0.8) {
-			items[i].colorno = 6;
+			items[i].fg = fgcols[2];
 		} else {
-			items[i].colorno = 7;
+			items[i].fg = fgcols[3];
 		}
 	}
 

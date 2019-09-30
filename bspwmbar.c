@@ -66,6 +66,11 @@ typedef enum {
 	DA_CENTER
 } DrawAlign;
 
+struct _Color {
+	XftColor xft;
+	char *name;
+};
+
 typedef struct {
 	FcPattern *pattern;
 	FcFontSet *set;
@@ -75,6 +80,7 @@ typedef struct {
 typedef struct {
 	const Module *module;
 	DrawAlign align;
+	Color fg, bg;
 
 	int x, width;
 } Label;
@@ -117,12 +123,15 @@ struct _DC {
 };
 
 typedef struct {
-	int     fd;
-	Display *dpy;
-	int     scr;
-	XFont   font;
-	DC      *dcs;
-	int     ndc;
+	int      fd;
+	Display  *dpy;
+	int      scr;
+	Visual   *vis;
+	Colormap cmap;
+	XFont    font;
+	DC       *dcs;
+	int      ndc;
+	Color    fg, bg;
 } Bspwmbar;
 
 static Bspwmbar bar;
@@ -132,9 +141,9 @@ static PollFD bfd, xfd;
 static PollFD timer;
 #endif
 
+static Color *cols;
+static int ncol, colcap;
 static XVisualInfo *visinfo;
-static Visual *visual;
-static XftColor cols[LENGTH(colors)];
 static XftFont **fcaches;
 static int nfcache = 0;
 static int fcachecap = 0;
@@ -160,60 +169,75 @@ static list_head pollfds;
 static int error_handler(Display *dpy, XErrorEvent *err);
 
 /**
- * get_color() - get XftColor pointer by index of color caches.
- * @index: index of the color.
- *
- * Return: XftColor *
- */
-XftColor *
-get_color(int index)
-{
-	return &cols[index];
-}
-
-/**
  * load_xft_color() - get XftColor by color name.
- * @dpy: display pointer.
- * @scr: screen number.
  * @colstr: color name.
+ * @color: (out) XftColor *.
  *
  * The returned XftColor must call XftColorFree() after used.
  *
- * Return: XftColor
+ * Return: Bool
  */
-static XftColor
-load_xft_color(Display *dpy, int scr, const char *colstr)
+static Bool
+xft_color_load(const char *colstr, XftColor *color)
 {
-	Colormap cmap = DefaultColormap(dpy, scr);
-	XftColor color;
-
-	XftColorAllocName(dpy, visual, cmap, colstr, &color);
-	return color;
+	return XftColorAllocName(bar.dpy, bar.vis, bar.cmap, colstr, color);
 }
 
 /**
- * load_colors() - load colors for bspwmbar.
- * @dpy: display pointer.
- * @scr: screen number.
+ * color_load() - load color by the specified name.
+ * @colstr: color name.
+ *
+ * Return: Color
  */
-static void
-load_colors(Display *dpy, int scr)
+Color
+color_load(const char *colstr)
 {
-	for (size_t i = 0; i < LENGTH(colors); i++)
-		cols[i] = load_xft_color(dpy, scr, colors[i]);
+	int i;
+	for (i = 0; i < ncol; i++)
+		if (!strncmp(cols[i]->name, colstr, strlen(cols[i]->name)))
+			return cols[i];
+	if (ncol >= colcap) {
+		colcap += 5;
+		cols = realloc(cols, sizeof(struct _Color) * colcap);
+	}
+	cols[ncol] = calloc(1, sizeof(struct _Color));
+	if (!xft_color_load(colstr, &cols[ncol]->xft))
+		return NULL;
+	cols[ncol]->name = strdup(colstr);
+	return cols[ncol++];
 }
 
 /**
- * free_colors() - free loaded colors.
- * @dpy: display pointer.
- * @scr: screen number.
+ * color_free() - free resources of the specified color.
+ * @color: color.
  */
 static void
-free_colors(Display *dpy, int scr)
+color_free(Color color)
 {
-	Colormap cmap = DefaultColormap(dpy, scr);
-	for (size_t i = 0; i < LENGTH(colors); i++)
-		XftColorFree(dpy, visual, cmap, &cols[i]);
+	XftColorFree(bar.dpy, bar.vis, bar.cmap, &color->xft);
+	free(color->name);
+}
+
+/**
+ * color_default_fg() - returns default fg color.
+ *
+ * Return: Color
+ */
+Color
+color_default_fg()
+{
+	return bar.fg;
+}
+
+/**
+ * color_default_bg() - returns default bg color.
+ *
+ * Return: Color
+ */
+Color
+color_default_bg()
+{
+	return bar.bg;
 }
 
 /**
@@ -351,8 +375,7 @@ get_visual_info(Display *dpy)
  * @height: window height.
  */
 static void
-dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
-             int height)
+dc_init(DC dc, Display *dpy, int scr, int x, int y, int width, int height)
 {
 	XGCValues gcv = { 0 };
 	XSetWindowAttributes wattrs;
@@ -360,11 +383,11 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 	BarWindow *xw = &dc->xbar;
 	int i = 0;
 
-	wattrs.background_pixel = cols[BGCOLOR].pixel;
+	wattrs.background_pixel = bar.bg->xft.pixel;
 	wattrs.event_mask = NoEventMask;
 
 	xw->win = XCreateWindow(dpy, RootWindow(dpy, scr), x, y, width, height, 0,
-	                        CopyFromParent, CopyFromParent, visual,
+	                        CopyFromParent, CopyFromParent, bar.vis,
 	                        CWBackPixel | CWEventMask, &wattrs);
 
 	/* set window type */
@@ -391,7 +414,7 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 		dc->buf = xw->win;
 	gcv.graphics_exposures = 1;
 	dc->gc = XCreateGC(dpy, dc->buf, GCGraphicsExposures, &gcv);
-	dc->draw = XftDrawCreate(dpy, dc->buf, visual, DefaultColormap(dpy, scr));
+	dc->draw = XftDrawCreate(dpy, dc->buf, bar.vis, bar.cmap);
 	dc->swapinfo.swap_window = dc->xbar.win;
 	dc->swapinfo.swap_action = XdbeBackground;
 
@@ -422,6 +445,20 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 	/* send window rendering request */
 	XLowerWindow(dpy, xw->win);
 	XMapWindow(dpy, xw->win);
+}
+
+/**
+ * dc_free() - free resources of DC.
+ * dc: DC.
+ */
+static void
+dc_free(DC dc)
+{
+	XFreeGC(bar.dpy, dc->gc);
+	XftDrawDestroy(dc->draw);
+	XDestroyWindow(bar.dpy, dc->xbar.win);
+	free(dc->xbar.monitor.desktops);
+	free(dc);
 }
 
 /**
@@ -721,14 +758,14 @@ draw_padding(DC dc, int num)
  * @str: rendering text.
  */
 static void
-draw_string(DC dc, XftColor *color, const char *str)
+draw_string(DC dc, Color color, const char *str)
 {
 	int width;
 	int nglyph = load_glyphs(str, glyph_caches, sizeof(glyph_caches), &width);
 	if (dc->align == DA_RIGHT)
 		dc_move_x(dc, width);
 	dc_calc_render_pos(dc, glyph_caches, nglyph);
-	XftDrawCharFontSpec(dc->draw, color, glyph_caches, nglyph);
+	XftDrawCharFontSpec(dc->draw, &color->xft, glyph_caches, nglyph);
 	if (dc->align == DA_LEFT)
 		dc_move_x(dc, width);
 }
@@ -742,7 +779,7 @@ void
 draw_text(DC dc, const char *str)
 {
 	draw_padding(dc, celwidth);
-	draw_string(dc, &cols[FGCOLOR], str);
+	draw_string(dc, bar.fg, str);
 	draw_padding(dc, celwidth);
 }
 
@@ -764,10 +801,10 @@ draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
 	if (dc->align == DA_RIGHT)
 		dc->right_x += width;
 	int x = dc_get_x(dc) + celwidth;
-	draw_string(dc, &cols[FGCOLOR], label);
+	draw_string(dc, bar.fg, label);
 	draw_padding(dc, celwidth);
 	for (int i = 0; i < nitem; i++) {
-		XSetForeground(bar.dpy, dc->gc, cols[ALTBGCOLOR].pixel);
+		XSetForeground(bar.dpy, dc->gc, items[i].bg->xft.pixel);
 		XFillRectangle(bar.dpy, dc->buf, dc->gc, x - celwidth,
 		               basey, celwidth, maxh);
 
@@ -775,7 +812,7 @@ draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
 			goto CONTINUE;
 
 		int height = SMALLER(BIGGER(maxh * items[i].val, 1), maxh);
-		XSetForeground(bar.dpy, dc->gc, cols[items[i].colorno].pixel);
+		XSetForeground(bar.dpy, dc->gc, items[i].fg->xft.pixel);
 		XFillRectangle(bar.dpy, dc->buf, dc->gc, x - celwidth,
 		               basey + (maxh - height), celwidth, height);
 	CONTINUE:
@@ -855,8 +892,11 @@ bspwm_parse(char *report)
 void
 text(DC dc, Option opts)
 {
+	Color fg = bar.fg;
+	if (opts.text.fg)
+		fg = color_load(opts.text.fg);
 	draw_padding(dc, celwidth);
-	draw_string(dc, &cols[opts.text.color], opts.text.label);
+	draw_string(dc, fg, opts.text.label);
 	draw_padding(dc, celwidth);
 }
 
@@ -1003,6 +1043,17 @@ bspwmbar_init(Display *dpy, int scr)
 		return 1;
 	}
 
+	/* initialize */
+	bar.dpy = dpy;
+	bar.scr = scr;
+	if (xdbe_support)
+		bar.vis = get_visual_info(dpy)->visual;
+	else
+		bar.vis = DefaultVisual(dpy, DefaultScreen(dpy));
+	bar.cmap = DefaultColormap(dpy, scr);
+	bar.fg = color_load(FGCOLOR);
+	bar.bg = color_load(BGCOLOR);
+
 	/* get monitors */
 	xrr_mon = XRRGetMonitors(dpy, root, 1, &nmon);
 	bar.dcs = (DC *)calloc(nmon, sizeof(DC));
@@ -1028,10 +1079,6 @@ bspwmbar_init(Display *dpy, int scr)
 	}
 	XRRFreeScreenResources(xrr_res);
 	XRRFreeMonitors(xrr_mon);
-
-	/* initialize */
-	bar.dpy = dpy;
-	bar.scr = scr;
 
 	/* load_fonts */
 	if (load_fonts(fontname))
@@ -1070,11 +1117,7 @@ bspwmbar_destroy()
 
 	/* rendering resources */
 	for (i = 0; i < bar.ndc; i++) {
-		XFreeGC(bar.dpy, bar.dcs[i]->gc);
-		XftDrawDestroy(bar.dcs[i]->draw);
-		XDestroyWindow(bar.dpy, bar.dcs[i]->xbar.win);
-		free(bar.dcs[i]->xbar.monitor.desktops);
-		free(bar.dcs[i]);
+		dc_free(bar.dcs[i]);
 	}
 	free(bar.dcs);
 	if (xdbe_support)
@@ -1102,9 +1145,15 @@ bspwm_send(char *cmd, int len)
 void
 desktops(DC dc, Option opts)
 {
-	XftColor col;
+	static Color fg = NULL, altfg = NULL;
+	Color col;
 	const char *ws;
 	int cur, max = dc->xbar.monitor.ndesktop;
+
+	if (!fg)
+		fg = color_load(FGCOLOR);
+	if (!altfg)
+		altfg = color_load(ALTFGCOLOR);
 
 	draw_padding(dc, celwidth);
 	for (int i = 0, j = max - 1; i < max; i++, j--) {
@@ -1113,10 +1162,8 @@ desktops(DC dc, Option opts)
 		ws = (dc->xbar.monitor.desktops[cur].state & STATE_ACTIVE)
 		     ? opts.desk.active
 		     : opts.desk.inactive;
-		col = (dc->xbar.monitor.desktops[cur].state == STATE_FREE)
-		      ? cols[ALTFGCOLOR]
-		      : cols[FGCOLOR];
-		draw_string(dc, &col, ws);
+		col = (dc->xbar.monitor.desktops[cur].state == STATE_FREE) ? altfg : fg;
+		draw_string(dc, col, ws);
 		draw_padding(dc, celwidth / 2.0 + 0.5);
 	}
 	draw_padding(dc, celwidth);
@@ -1485,12 +1532,14 @@ signal_handler(int signum) {
 static void
 cleanup(Display *dpy)
 {
+	int i;
 	if (wintitle)
 		XFree(wintitle);
 
 	if (tray)
 		systray_destroy(tray);
-	free_colors(dpy, DefaultScreen(dpy));
+	for (i = 0; i < ncol; i++)
+		color_free(cols[i]);
 	bspwmbar_destroy();
 	XCloseDisplay(dpy);
 	FcFini();
@@ -1529,12 +1578,6 @@ main(int argc, char *argv[])
 
 	/* get active widnow title */
 	windowtitle_update(dpy, DefaultScreen(dpy));
-
-	if (xdbe_support)
-		visual = get_visual_info(dpy)->visual;
-	else
-		visual = DefaultVisual(dpy, DefaultScreen(dpy));
-	load_colors(dpy, DefaultScreen(dpy));
 
 	if (bspwmbar_init(dpy, DefaultScreen(dpy))) {
 		err("bspwmbar_init(): Failed to init bspwmbar\n");

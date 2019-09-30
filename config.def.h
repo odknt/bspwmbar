@@ -23,35 +23,16 @@
 const char *fontname = "sans-serif:size=10";
 
 /*
- * color map for bspwmbar
- */
-const char *colors[] = {
-	"#222222", /* black */
-	"#7f7f7f", /* gray */
-	"#e5e5e5", /* white */
-	"#1793d1", /* logo color */
-
-	"#449f3d", /* success color */
-	"#2f8419", /* normal color */
-	"#f5a70a", /* warning color */
-	"#ed5456", /* critical color */
-
-	"#555555", /* dark gray */
-};
-
-/*
  * color settings by index of color map
  */
+/* bspwmbar fg color */
+#define FGCOLOR    "#e5e5e5"
 /* bspwmbar bg color */
-#define BGCOLOR    0
+#define BGCOLOR    "#222222"
 /* inactive fg color */
-#define ALTFGCOLOR 1
+#define ALTFGCOLOR "#7f7f7f"
 /* graph bg color */
-#define ALTBGCOLOR 8
-/* general fg color */
-#define FGCOLOR    2
-/* logo color */
-#define LOGOCOLOR  3
+#define ALTBGCOLOR "#555555"
 
 /*
  * Module definition
@@ -80,6 +61,9 @@ const char *colors[] = {
  *   text           argument for text module
  *                      label: render string
  *                      color: render color
+ *   cpu/mem        argument for cpu/mem module
+ *                      cols: colors specification for graph items
+ *
  * handler:
  *    volume_ev     handle click ButtonPress for voluem control
  *                      button1: toggle mute/unmute
@@ -91,15 +75,17 @@ const char *colors[] = {
 const Module left_modules[] = {
 	{ /* Arch logo */
 		.func = text,
-		.opts = { .text = { .label = "", .color = LOGOCOLOR } },
+		.opts = {
+			.text = { .label = "", .fg = "#1793d1" },
+		},
 	},
 	{ /* bspwm desktop state */
 		.func = desktops,
-		.opts = { .desk = { .active = "", .inactive = "" } }
+		.opts = { .desk = { .active = "", .inactive = "" } },
 	},
 	{ /* active window title */
 		.func = windowtitle,
-		.opts = { .arg = "…" }
+		.opts = { .arg = "…" },
 	},
 };
 
@@ -110,27 +96,46 @@ const Module right_modules[] = {
 	},
 	{ /* cpu usage */
 		.func = cpugraph,
-		.opts = { .prefix = "cpu: " },
+		.opts = {
+			.prefix = "cpu: ",
+		},
 	},
 	{ /* memory usage */
-		.func = memgraph, .opts = { .prefix = "mem: ", },
+		.func = memgraph,
+		.opts = {
+			.prefix = "mem: ",
+		},
 	},
 	{ /* master playback volume */
 		.func = volume,
-		.opts = { .suffix = "％", .vol = { .muted = "婢", .unmuted = "墳" } },
+		.opts = {
+			.vol = { .muted = "婢", .unmuted = "墳" },
+			.suffix = "％",
+		},
 		.handler = volume_ev,
 	},
 	{ /* used space of root file system */
 		.func = filesystem,
-		.opts = { .arg = "/", .prefix = " ", .suffix = "％" },
+		.opts = {
+			.arg = "/",
+			.prefix = " ",
+			.suffix = "％",
+		},
 	},
 	{ /* cpu temperature */
 		.func = thermal,
-		.opts = { .arg = THERMAL_PATH, .prefix = " ", .suffix = "℃" },
+		.opts = {
+			.arg = THERMAL_PATH,
+			.prefix = " ",
+			.suffix = "℃",
+		},
 	},
 	{ /* clock */
 		.func = datetime,
-		.opts = { .prefix = " ", .arg = "%H:%M" },
+		.opts = {
+			.prefix = " ",
+			.arg = "%H:%M",
+		},
 	},
 };
 

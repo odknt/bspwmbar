@@ -4,7 +4,6 @@
 #define BSPWMBAR_H_
 
 #include <X11/Xlib.h>
-#include <X11/Xft/Xft.h>
 
 #include "util.h"
 
@@ -15,9 +14,11 @@ typedef enum {
 	PR_FAILED
 } PollResult;
 
+typedef struct _Color *Color;
+
 typedef struct {
 	double val;
-	int    colorno;
+	Color fg, bg;
 } GraphItem;
 
 typedef struct {
@@ -31,9 +32,13 @@ typedef struct {
 } DesktopOption;
 
 typedef struct {
-	int  color;
 	char *label;
+	char *fg;
 } TextOption;
+
+typedef struct {
+	char *cols[4];
+} GraphOption;
 
 typedef struct {
 	const char *prefix;
@@ -43,6 +48,8 @@ typedef struct {
 		const VolumeOption vol;
 		const DesktopOption desk;
 		const TextOption text;
+		const GraphOption cpu;
+		const GraphOption mem;
 	};
 } Option;
 
@@ -74,7 +81,10 @@ typedef struct {
 	XEventHandler handler;
 } Module;
 
-XftColor *getcolor(int);
+Color color_load(const char *);
+Color color_default_fg();
+Color color_default_bg();
+
 void draw_text(DC, const char *);
 void draw_bargraph(DC, const char *, GraphItem *, int);
 
