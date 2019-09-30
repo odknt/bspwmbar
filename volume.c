@@ -1,5 +1,8 @@
 /* See LICENSE file for copyright and license details. */
 
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/audioio.h>
