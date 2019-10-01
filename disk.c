@@ -37,11 +37,11 @@ disk_perc(const char *mpoint)
 void
 filesystem(DC dc, Option opts)
 {
-	int perc = disk_perc(opts.any.arg);
-	if (!opts.any.prefix)
-		opts.any.prefix = "";
-	if (!opts.any.suffix)
-		opts.any.suffix = "";
-	sprintf(buf, "%s%d%s", opts.any.prefix, perc, opts.any.suffix);
+	int perc = disk_perc(opts->fs.mountpoint);
+	if (!opts->fs.prefix)
+		opts->fs.prefix = "";
+	if (!opts->fs.suffix)
+		opts->fs.suffix = "";
+	sprintf(buf, "%s%d%s", opts->fs.prefix, perc, opts->fs.suffix);
 	draw_text(dc, buf);
 }

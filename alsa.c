@@ -174,18 +174,18 @@ volume(DC dc, Option opts)
 	if (!pfd.fd)
 		alsa_init();
 
-	if (!opts.vol.prefix)
-		opts.vol.prefix = "";
-	if (!opts.vol.suffix)
-		opts.vol.suffix = "";
+	if (!opts->vol.prefix)
+		opts->vol.prefix = "";
+	if (!opts->vol.suffix)
+		opts->vol.suffix = "";
 
 	if (!info.volume)
 		alsa_control(ALSACTL_GETINFO);
 
-	const char *mark = (info.unmuted) ? opts.vol.unmuted : opts.vol.muted;
-	sprintf(buf, "%s%s %.0lf%s", opts.vol.prefix,  mark,
+	const char *mark = (info.unmuted) ? opts->vol.unmuted : opts->vol.muted;
+	sprintf(buf, "%s%s %.0lf%s", opts->vol.prefix,  mark,
 	                             (double)info.volume / info.max * 100,
-	                             opts.vol.suffix);
+	                             opts->vol.suffix);
 	draw_text(dc, buf);
 }
 

@@ -17,7 +17,7 @@ thermal(DC dc, Option opts)
 	static int thermal_found = -1;
 
 	if (thermal_found == -1) {
-		if (access(opts.any.arg, F_OK) != -1)
+		if (access(opts->thermal.sensor, F_OK) != -1)
 			thermal_found = 1;
 		else
 			thermal_found = 0;
@@ -30,14 +30,15 @@ thermal(DC dc, Option opts)
 		goto DRAW_THERMAL;
 	prevtime = curtime;
 
-	if (pscanf(opts.any.arg, "%ju", &temp) == -1)
+	if (pscanf(opts->thermal.sensor, "%ju", &temp) == -1)
 		return;
 
 DRAW_THERMAL:
-	if (!opts.any.prefix)
-		opts.any.prefix = "";
-	if (!opts.any.suffix)
-		opts.any.suffix = "";
-	sprintf(buf, "%s%lu%s", opts.any.prefix, temp / 1000, opts.any.suffix);
+	if (!opts->thermal.prefix)
+		opts->thermal.prefix = "";
+	if (!opts->thermal.suffix)
+		opts->thermal.suffix = "";
+	sprintf(buf, "%s%lu%s", opts->thermal.prefix, temp / 1000,
+	        opts->thermal.suffix);
 	draw_text(dc, buf);
 }

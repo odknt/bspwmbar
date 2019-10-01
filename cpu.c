@@ -156,8 +156,8 @@ cpugraph(DC dc, Option opts)
 
 	bgcol = color_load("#555555");
 	for (i = 0; i < 4; i++) {
-		if (opts.cpu.cols[i])
-			fgcols[i] = color_load(opts.cpu.cols[i]);
+		if (opts->cpu.cols[i])
+			fgcols[i] = color_load(opts->cpu.cols[i]);
 		else
 			fgcols[i] = color_load(deffgcols[i]);
 	}
@@ -177,7 +177,7 @@ cpugraph(DC dc, Option opts)
 		}
 	}
 
-	if (!opts.cpu.prefix)
-		opts.cpu.prefix = "";
-	draw_bargraph(dc, opts.cpu.prefix, items, ncore);
+	if (!opts->cpu.prefix)
+		opts->cpu.prefix = "";
+	draw_bargraph(dc, opts->cpu.prefix, items, ncore);
 }

@@ -85,8 +85,8 @@ memgraph(DC dc, Option opts)
 
 	bgcol = color_load("#555555");
 	for (i = 0; i < 4; i++) {
-		if (opts.mem.cols[i])
-			fgcols[i] = color_load(opts.cpu.cols[i]);
+		if (opts->mem.cols[i])
+			fgcols[i] = color_load(opts->cpu.cols[i]);
 		else
 			fgcols[i] = color_load(deffgcols[i]);
 	}
@@ -103,7 +103,7 @@ memgraph(DC dc, Option opts)
 		else
 			items[i].fg = fgcols[3];
 	}
-	if (!opts.mem.prefix)
-		opts.mem.prefix = "";
-	draw_bargraph(dc, opts.mem.prefix, items, 10);
+	if (!opts->mem.prefix)
+		opts->mem.prefix = "";
+	draw_bargraph(dc, opts->mem.prefix, items, 10);
 }

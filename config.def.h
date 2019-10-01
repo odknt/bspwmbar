@@ -16,8 +16,6 @@
 #define TITLE_MAXSZ 50
 /* set window height */
 #define BAR_HEIGHT  24
-/* set tray icon size */
-#define TRAY_ICONSZ 16
 
 /* set font pattern for find fonts, see fonts-conf(5) */
 const char *fontname = "sans-serif:size=10";
@@ -36,114 +34,83 @@ const char *fontname = "sans-serif:size=10";
 
 /*
  * Module definition
- *
- * function:
- *   text           render the given string
- *   desktops       bspwm desktop states
- *   windowtitle    active window title
- *   datetime       the current time in the given format
- *   thermal        temperature of given sensor file
- *   volume         playback volume
- *   memgraph       memory usage
- *   cpugraph       cpu usage per core
- *   systray        systray icons
- *
- * option:
- *   prefix         prefix string for module
- *   suffix         suffix string for module
- *   arg            string argument for general modules
- *   vol            argument for volume module
- *                      muted:   string for muted state
- *                      unmuted: string for unmuted state
- *   desk           argument for desktops module
- *                      active:   string for active state
- *                      inactive: string for inactive state
- *   text           argument for text module
- *                      label: render string
- *                      color: render color
- *   cpu/mem        argument for cpu/mem module
- *                      cols: colors specification for graph items
- *
- * handler:
- *    volume_ev     handle click ButtonPress for voluem control
- *                      button1: toggle mute/unmute
- *                      button4: volume up (scroll up)
- *                      button5: volume down (scroll down)
  */
 
 /* modules on the left */
-const Module left_modules[] = {
+Module left_modules[] = {
 	{ /* Arch logo */
-		.func = text,
-		.opts = {
-			.text = { .label = "", .fg = "#1793d1" },
+		.text = {
+			.func = text,
+			.label = "",
+			.fg = "#1793d1",
 		},
 	},
 	{ /* bspwm desktop state */
-		.func = desktops,
-		.opts = { .desk = { .active = "", .inactive = "" } },
+		.desk = {
+			.func = desktops,
+			.active = "",
+			.inactive = "",
+		},
 	},
 	{ /* active window title */
-		.func = windowtitle,
-		.opts = { .any = { .arg = "…" } },
+		.title = {
+			.func = windowtitle,
+			.maxlen   = TITLE_MAXSZ,
+			.ellipsis = "…",
+		},
 	},
 };
 
 /* modules on the right */
-const Module right_modules[] = {
+Module right_modules[] = {
 	{ /* system tray */
-		.func = systray
+		.tray = {
+			.func = systray,
+			.iconsize = 16,
+		},
 	},
 	{ /* cpu usage */
-		.func = cpugraph,
-		.opts = {
-			.cpu = { .prefix = "cpu: " },
+		.cpu = {
+			.func = cpugraph,
+			.prefix = "cpu: "
 		},
 	},
 	{ /* memory usage */
-		.func = memgraph,
-		.opts = {
-			.mem = { .prefix = "mem: " },
+		.mem = {
+			.func = memgraph,
+			.prefix = "mem: "
 		},
 	},
 	{ /* master playback volume */
-		.func = volume,
-		.opts = {
-			.vol = {
-				.suffix = "％",
-				.muted = "婢",
-				.unmuted = "墳",
-			},
+		.vol = {
+			.func = volume,
+			.handler = volume_ev,
+			.suffix = "％",
+			.muted = "婢",
+			.unmuted = "墳",
 		},
-		.handler = volume_ev,
 	},
 	{ /* used space of root file system */
-		.func = filesystem,
-		.opts = {
-			.any = {
-				.arg = "/",
-				.prefix = " ",
-				.suffix = "％",
-			}
+		.fs = {
+			.func = filesystem,
+			.mountpoint = "/",
+			.prefix = " ",
+			.suffix = "％",
 		},
 	},
 	{ /* cpu temperature */
-		.func = thermal,
-		.opts = {
-			.any = {
-				.arg = THERMAL_PATH,
-				.prefix = " ",
-				.suffix = "℃",
-			},
+		.thermal = {
+			.func = thermal,
+			.sensor = THERMAL_PATH,
+			.prefix = " ",
+			.suffix = "℃",
 		},
 	},
 	{ /* clock */
-		.func = datetime,
-		.opts = {
-			.any = {
-				.prefix = " ",
-				.arg = "%H:%M",
-			},
+		.date = {
+			.func = datetime,
+			.prefix = " ",
+			.format = "%H:%M",
 		},
 	},
 };

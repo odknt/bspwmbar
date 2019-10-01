@@ -115,14 +115,14 @@ volume(DC dc, Option opts)
 	if (!initialized)
 		init_devinfo(fd);
 
-	if (!opts.vol.prefix)
-		opts.vol.prefix = "";
-	if (!opts.vol.suffix)
-		opts.vol.suffix = "";
+	if (!opts->vol.prefix)
+		opts->vol.prefix = "";
+	if (!opts->vol.suffix)
+		opts->vol.suffix = "";
 
-	const char *mark = is_muted(fd) ? opts.vol.muted : opts.vol.unmuted;
-	sprintf(buf, "%s%s %d%s", opts.vol.prefix, mark, get_volume(fd) * 100 / 255,
-	                          opts.vol.suffix);
+	const char *mark = is_muted(fd) ? opts->vol.muted : opts->vol.unmuted;
+	sprintf(buf, "%s%s %d%s", opts->vol.prefix, mark, get_volume(fd) * 100 / 255,
+	                          opts->vol.suffix);
 	draw_text(dc, buf);
 
 	close(fd);

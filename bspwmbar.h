@@ -24,52 +24,8 @@ typedef struct {
 	Color fg, bg;
 } GraphItem;
 
-typedef struct {
-	char *prefix;
-	char *suffix;
-
-	char *muted;
-	char *unmuted;
-} VolumeOption;
-
-typedef struct {
-	char *prefix;
-	char *suffix;
-
-	char *active;
-	char *inactive;
-} DesktopOption;
-
-typedef struct {
-	char *prefix;
-	char *suffix;
-
-	char *label;
-	char *fg;
-} TextOption;
-
-typedef struct {
-	char *prefix;
-	char *suffix;
-
-	char *cols[4];
-} GraphOption;
-
-typedef struct {
-	char *prefix;
-	char *suffix;
-
-	char *arg;
-} AnyOption;
-
-typedef union {
-	AnyOption any;
-	VolumeOption vol;
-	DesktopOption desk;
-	TextOption text;
-	GraphOption cpu;
-	GraphOption mem;
-} Option;
+typedef union _Module Module;
+typedef Module *Option;
 
 /* Draw context */
 typedef struct _DC *DC;
@@ -93,11 +49,87 @@ void poll_add(PollFD *);
 void poll_del(PollFD *);
 
 /* Module */
+#define ModuleBase \
+	ModuleHandler func; \
+	XEventHandler handler; \
+	char *prefix; \
+	char *suffix
+
 typedef struct {
-	ModuleHandler func;
-	Option opts;
-	XEventHandler handler;
-} Module;
+	ModuleBase;
+
+	char *muted;
+	char *unmuted;
+} VolumeModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *active;
+	char *inactive;
+} DesktopModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *label;
+	char *fg;
+} TextModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *cols[4];
+} GraphModule;
+
+typedef struct {
+	ModuleBase;
+
+	unsigned int maxlen;
+	char *ellipsis;
+} TitleModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *format;
+} DateTimeModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *sensor;
+} ThermalModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *mountpoint;
+} FileSystemModule;
+
+typedef struct {
+	ModuleBase;
+} AnyModule;
+
+typedef struct {
+	ModuleBase;
+
+	int iconsize;
+} SystrayModule;
+
+union _Module {
+	AnyModule any;
+	SystrayModule tray;
+	DateTimeModule date;
+	FileSystemModule fs;
+	VolumeModule vol;
+	DesktopModule desk;
+	TextModule text;
+	GraphModule cpu;
+	GraphModule mem;
+	TitleModule title;
+	ThermalModule thermal;
+};
 
 Color color_load(const char *);
 Color color_default_fg();

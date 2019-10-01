@@ -18,17 +18,17 @@ datetime(DC dc, Option opts)
 	time_t timer = time(NULL);
 	struct tm *tptr = localtime(&timer);
 
-	if (!opts.any.arg)
+	if (!opts->date.format)
 		die("datetime(): arg is required for datetime");
-	if (!opts.any.prefix)
-		opts.any.prefix = "";
-	if (!opts.any.suffix)
-		opts.any.suffix = "";
-	int size = SMALLER(strlen(opts.any.arg) + strlen(opts.any.prefix) +
-	                   strlen(opts.any.prefix) + 1, 128);
+	if (!opts->date.prefix)
+		opts->date.prefix = "";
+	if (!opts->date.suffix)
+		opts->date.suffix = "";
+	int size = SMALLER(strlen(opts->date.format) + strlen(opts->date.prefix) +
+	                   strlen(opts->date.prefix) + 1, 128);
 	char *format = alloca(size);
-	snprintf(format, size, "%s%s%s", opts.any.prefix, opts.any.arg,
-	         opts.any.suffix);
+	snprintf(format, size, "%s%s%s", opts->date.prefix, opts->date.format,
+	         opts->date.suffix);
 	strftime(buf, sizeof(buf), format, tptr);
 
 	draw_text(dc, buf);

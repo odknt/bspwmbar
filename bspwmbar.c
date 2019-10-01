@@ -79,7 +79,7 @@ typedef struct {
 } XFont;
 
 typedef struct {
-	const Module *module;
+	Option option;
 	DrawAlign align;
 	Color fg, bg;
 
@@ -474,12 +474,12 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width, int height)
 	dc->nlabel = LENGTH(left_modules) + LENGTH(right_modules);
 	for (i = 0; i < (int)LENGTH(left_modules); i++) {
 		dc->labels[i].align = DA_LEFT;
-		dc->labels[i].module = &left_modules[i];
+		dc->labels[i].option = &left_modules[i];
 	}
 	int rmlen = LENGTH(right_modules), nlabel = i;
 	for (i = rmlen - 1; i >= 0; i--, nlabel++) {
 		dc->labels[nlabel].align = DA_RIGHT;
-		dc->labels[nlabel].module = &right_modules[i];
+		dc->labels[nlabel].option = &right_modules[i];
 	}
 
 	/* send window rendering request */
@@ -600,13 +600,13 @@ windowtitle(DC dc, Option opts)
 	if (!wintitle)
 		return;
 
-	size_t i = 0;
 	FcChar32 dst;
+	size_t i = 0, titlelen = strlen(wintitle);
 	strncpy(buf, wintitle, sizeof(buf));
-	for (size_t len = 0; i < strlen(wintitle) && len < TITLE_MAXSZ; len++)
+	for (size_t len = 0; i < titlelen && len < opts->title.maxlen; len++)
 		i += FcUtf8ToUcs4((FcChar8 *)&wintitle[i], &dst, strlen(wintitle) - i);
 	if (i < strlen(buf))
-		strncpy(&buf[i], opts.any.arg, sizeof(buf) - i);
+		strncpy(&buf[i], opts->title.ellipsis, sizeof(buf) - i);
 
 	draw_text(dc, buf);
 }
@@ -933,10 +933,10 @@ void
 text(DC dc, Option opts)
 {
 	Color fg = bar.fg;
-	if (opts.text.fg)
-		fg = color_load(opts.text.fg);
+	if (opts->text.fg)
+		fg = color_load(opts->text.fg);
 	draw_padding(dc, celwidth);
-	draw_string(dc, fg, opts.text.label);
+	draw_string(dc, fg, opts->text.label);
 	draw_padding(dc, celwidth);
 }
 
@@ -952,7 +952,7 @@ render_label(DC dc)
 		x = dc_get_x(dc); width = 0;
 
 		dc->align = dc->labels[j].align;
-		dc->labels[j].module->func(dc, dc->labels[j].module->opts);
+		dc->labels[j].option->any.func(dc, dc->labels[j].option);
 		if (dc->align == DA_LEFT)
 			width = dc_get_x(dc) - x;
 		else if (dc->align == DA_RIGHT)
@@ -1200,8 +1200,8 @@ desktops(DC dc, Option opts)
 		cur = (dc->align == DA_RIGHT) ? j : i;
 		draw_padding(dc, celwidth / 2.0 + 0.5);
 		ws = (dc->xbar.monitor.desktops[cur].state & STATE_ACTIVE)
-		     ? opts.desk.active
-		     : opts.desk.inactive;
+		     ? opts->desk.active
+		     : opts->desk.inactive;
 		col = (dc->xbar.monitor.desktops[cur].state == STATE_FREE) ? altfg : fg;
 		draw_string(dc, col, ws);
 		draw_padding(dc, celwidth / 2.0 + 0.5);
@@ -1230,12 +1230,12 @@ systray(DC dc, Option opts)
 		TrayItem *item = list_entry(pos, TrayItem, head);
 		if (!item->info.flags)
 			continue;
-		draw_padding(dc, TRAY_ICONSZ);
+		draw_padding(dc, opts->tray.iconsize);
 		if (item->x != dc_get_x(dc)) {
 			item->x = dc_get_x(dc);
 			XMoveResizeWindow(bar.dpy, item->win, item->x,
-			                  (BAR_HEIGHT - TRAY_ICONSZ) / 2, TRAY_ICONSZ,
-			                  TRAY_ICONSZ);
+			                  (BAR_HEIGHT - opts->tray.iconsize) / 2,
+			                  opts->tray.iconsize, opts->tray.iconsize);
 		}
 		draw_padding(dc, celwidth);
 	}
@@ -1450,12 +1450,12 @@ xev_handle()
 				break;
 			/* handle evnent */
 			for (int j = 0; j < dc->nlabel; j++) {
-				if (!dc->labels[j].module->handler)
+				if (!dc->labels[j].option->any.handler)
 					continue;
 				if (dc->labels[j].x < event.xbutton.x &&
 				    event.xbutton.x < dc->labels[j].x +
 				    dc->labels[j].width) {
-					dc->labels[j].module->handler(event);
+					dc->labels[j].option->any.handler(event);
 					res = PR_UPDATE;
 					break;
 				}
