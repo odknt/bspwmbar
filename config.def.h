@@ -85,7 +85,7 @@ const Module left_modules[] = {
 	},
 	{ /* active window title */
 		.func = windowtitle,
-		.opts = { .arg = "…" },
+		.opts = { .any = { .arg = "…" } },
 	},
 };
 
@@ -97,44 +97,53 @@ const Module right_modules[] = {
 	{ /* cpu usage */
 		.func = cpugraph,
 		.opts = {
-			.prefix = "cpu: ",
+			.cpu = { .prefix = "cpu: " },
 		},
 	},
 	{ /* memory usage */
 		.func = memgraph,
 		.opts = {
-			.prefix = "mem: ",
+			.mem = { .prefix = "mem: " },
 		},
 	},
 	{ /* master playback volume */
 		.func = volume,
 		.opts = {
-			.vol = { .muted = "婢", .unmuted = "墳" },
-			.suffix = "％",
+			.vol = {
+				.suffix = "％",
+				.muted = "婢",
+				.unmuted = "墳",
+			},
 		},
 		.handler = volume_ev,
 	},
 	{ /* used space of root file system */
 		.func = filesystem,
 		.opts = {
-			.arg = "/",
-			.prefix = " ",
-			.suffix = "％",
+			.any = {
+				.arg = "/",
+				.prefix = " ",
+				.suffix = "％",
+			}
 		},
 	},
 	{ /* cpu temperature */
 		.func = thermal,
 		.opts = {
-			.arg = THERMAL_PATH,
-			.prefix = " ",
-			.suffix = "℃",
+			.any = {
+				.arg = THERMAL_PATH,
+				.prefix = " ",
+				.suffix = "℃",
+			},
 		},
 	},
 	{ /* clock */
 		.func = datetime,
 		.opts = {
-			.prefix = " ",
-			.arg = "%H:%M",
+			.any = {
+				.prefix = " ",
+				.arg = "%H:%M",
+			},
 		},
 	},
 };

@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <time.h>
 
 /* X11 */
@@ -85,11 +86,11 @@ typedef struct {
 	int x, width;
 } Label;
 
-typedef int WsState;
+typedef int DesktopState;
 
 typedef struct {
 	char name[NAME_MAXSZ];
-	WsState state;
+	DesktopState state;
 } Desktop;
 
 typedef struct {
@@ -166,7 +167,46 @@ static struct kevent events[MAX_EVENTS];
 #endif
 static list_head pollfds;
 
-static int error_handler(Display *dpy, XErrorEvent *err);
+/* private functions */
+static int error_handler(Display *, XErrorEvent *);
+static void signal_handler(int);
+static int parse_display(char *, char **, int *, int *);
+static Bool xft_color_load(const char *, XftColor *);
+static void color_free(Color);
+static Window get_active_window(Display *, int);
+static void set_window_prop(Display *, Window, Atom, char *, int, void *, int);
+static unsigned char *get_window_prop(Display *, Window, char *);
+static unsigned char *get_window_title(Display *, Window);
+static XftFont *get_font(FcChar32 rune);
+static int load_fonts(const char *);
+static int load_glyphs(const char *, XftCharFontSpec *, int, int *);
+static void dc_init(DC, Display *, int, int, int, int, int);
+static void dc_free(DC);
+static int dc_get_x(DC);
+static void dc_move_x(DC, int);
+static void dc_calc_render_pos(DC, XftCharFontSpec *, int);
+static void draw_padding(DC, int);
+static void draw_string(DC, Color, const char *);
+static void render_label(DC);
+static int bspwm_connect(Display *);
+static int bspwm_send(char *, int);
+static void bspwm_parse(char *);
+static DesktopState bspwm_desktop_state(char);
+static void windowtitle_update(Display *, int);
+static void render();
+static int get_baseline();
+static int bspwmbar_init(Display *, int);
+static void bspwmbar_destroy();
+static void poll_init();
+static void poll_loop(void (*)());
+static void poll_stop();
+static PollResult bspwm_handle(int);
+static PollResult xev_handle();
+#if defined(__linux)
+static PollResult timer_reset(int);
+#endif
+static int is_change_active_window_event(XEvent);
+static void cleanup(Display *);
 
 /**
  * load_xft_color() - get XftColor by color name.
@@ -177,7 +217,7 @@ static int error_handler(Display *dpy, XErrorEvent *err);
  *
  * Return: Bool
  */
-static Bool
+Bool
 xft_color_load(const char *colstr, XftColor *color)
 {
 	return XftColorAllocName(bar.dpy, bar.vis, bar.cmap, colstr, color);
@@ -211,7 +251,7 @@ color_load(const char *colstr)
  * color_free() - free resources of the specified color.
  * @color: color.
  */
-static void
+void
 color_free(Color color)
 {
 	XftColorFree(bar.dpy, bar.vis, bar.cmap, &color->xft);
@@ -241,19 +281,19 @@ color_default_bg()
 }
 
 /**
- * ws_state() - parse char to bspwm desktop state.
+ * bspwm_desktop_state() - parse char to bspwm desktop state.
  * @s: desktop state char.
  *
- * Retrun: WsState
+ * Retrun: DesktopState
  * 'o'         - STATE_OCCUPIED
  * 'u'         - STATE_URGENT
  * 'F','U','O' - STATE_ACTIVE
  * not match   - STATE_FREE
  */
-static WsState
-ws_state(char s)
+DesktopState
+bspwm_desktop_state(char s)
 {
-	WsState state = STATE_FREE;
+	DesktopState state = STATE_FREE;
 	if ((s | 0x20) == 'o')
 		state = STATE_OCCUPIED;
 	if ((s | 0x20) == 'u')
@@ -272,7 +312,7 @@ ws_state(char s)
  * Return: Property value as (unsigned char *).
  *         The value needs free by call free() after used.
  */
-static unsigned char *
+unsigned char *
 get_window_prop(Display *dpy, Window win, char *property)
 {
 	Atom type, filter;
@@ -300,7 +340,7 @@ get_window_prop(Display *dpy, Window win, char *property)
  * @propvalue: property values array.
  * @nvalue: length of propvalue.
  */
-static void
+void
 set_window_prop(Display *dpy, Window win, Atom type, char *property, int mode,
                 void *propvalue, int nvalue)
 {
@@ -374,7 +414,7 @@ get_visual_info(Display *dpy)
  * @width: window width.
  * @height: window height.
  */
-static void
+void
 dc_init(DC dc, Display *dpy, int scr, int x, int y, int width, int height)
 {
 	XGCValues gcv = { 0 };
@@ -451,7 +491,7 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width, int height)
  * dc_free() - free resources of DC.
  * dc: DC.
  */
-static void
+void
 dc_free(DC dc)
 {
 	XFreeGC(bar.dpy, dc->gc);
@@ -467,7 +507,7 @@ dc_free(DC dc)
  *
  * Return: int
  */
-static int
+int
 dc_get_x(DC dc)
 {
 	if (dc->align == DA_LEFT)
@@ -480,7 +520,7 @@ dc_get_x(DC dc)
  * @dc: DC.
  * @x: distance of movement.
  */
-static void
+void
 dc_move_x(DC dc, int x)
 {
 	if (dc->align == DA_LEFT)
@@ -496,7 +536,7 @@ dc_move_x(DC dc, int x)
  *
  * Return: Window
  */
-static Window
+Window
 get_active_window(Display *dpy, int scr)
 {
 	Window win = 0;
@@ -518,7 +558,7 @@ get_active_window(Display *dpy, int scr)
  * Return: unsigned char *
  *         The return value needs free after used.
  */
-static unsigned char *
+unsigned char *
 get_window_title(Display *dpy, Window win)
 {
 	unsigned char *title;
@@ -534,7 +574,7 @@ get_window_title(Display *dpy, Window win)
  * @dpy: display pointer.
  * @scr: screen number.
  */
-static void
+void
 windowtitle_update(Display *dpy, int scr)
 {
 	Window win;
@@ -566,7 +606,7 @@ windowtitle(DC dc, Option opts)
 	for (size_t len = 0; i < strlen(wintitle) && len < TITLE_MAXSZ; len++)
 		i += FcUtf8ToUcs4((FcChar8 *)&wintitle[i], &dst, strlen(wintitle) - i);
 	if (i < strlen(buf))
-		strncpy(&buf[i], opts.arg, sizeof(buf) - i);
+		strncpy(&buf[i], opts.any.arg, sizeof(buf) - i);
 
 	draw_text(dc, buf);
 }
@@ -577,7 +617,7 @@ windowtitle(DC dc, Option opts)
  *
  * Return: XftFont *
  */
-static XftFont *
+XftFont *
 get_font(FcChar32 rune)
 {
 	FcResult result;
@@ -643,7 +683,7 @@ get_font(FcChar32 rune)
  * 0 - success
  * 1 - failure
  */
-static int
+int
 load_fonts(const char *patstr)
 {
 	FcPattern *pat = FcNameParse((FcChar8 *)patstr);
@@ -677,7 +717,7 @@ load_fonts(const char *patstr)
  *
  * Return: y offset.
  */
-static int
+int
 get_baseline()
 {
 	return (BAR_HEIGHT - bar.font.base->height) / 2 + bar.font.base->ascent;
@@ -689,7 +729,7 @@ get_baseline()
  * @glyphs: (in/out) XftCharFontSpec *.
  * @nglyph: lenght of glyphs.
  */
-static void
+void
 dc_calc_render_pos(DC dc, XftCharFontSpec *glyphs, int nglyph)
 {
 	int x = dc_get_x(dc);
@@ -707,7 +747,7 @@ dc_calc_render_pos(DC dc, XftCharFontSpec *glyphs, int nglyph)
  *
  * Return: number of loaded glyphs.
  */
-static int
+int
 load_glyphs(const char *str, XftCharFontSpec *glyphs, int nglyph, int *width)
 {
 	XGlyphInfo extents = { 0 };
@@ -736,7 +776,7 @@ load_glyphs(const char *str, XftCharFontSpec *glyphs, int nglyph, int *width)
  * @dc: DC.
  * @num: padding width.
  */
-static void
+void
 draw_padding(DC dc, int num)
 {
 	switch ((int)dc->align) {
@@ -757,7 +797,7 @@ draw_padding(DC dc, int num)
  * @color: rendering text color.
  * @str: rendering text.
  */
-static void
+void
 draw_string(DC dc, Color color, const char *str)
 {
 	int width;
@@ -826,7 +866,7 @@ draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
  * bspwm_parse() - parse bspwm reported string.
  * @report: bspwm reported string.
  */
-static void
+void
 bspwm_parse(char *report)
 {
 	int i, j, name_len, nws = 0;
@@ -866,7 +906,7 @@ bspwm_parse(char *report)
 				curmon->desktops = realloc(curmon->desktops,
 				                           sizeof(Desktop) * curmon->cdesktop);
 			}
-			curmon->desktops[nws++].state = ws_state(tok);
+			curmon->desktops[nws++].state = bspwm_desktop_state(tok);
 			i = j;
 			break;
 		case 'L':
@@ -904,7 +944,7 @@ text(DC dc, Option opts)
  * render_label() - render all labels
  * @dc: DC.
  */
-static void
+void
 render_label(DC dc)
 {
 	int x = 0, width = 0;
@@ -928,7 +968,7 @@ render_label(DC dc)
 /**
  * render() - rendering all modules.
  */
-static void
+void
 render()
 {
 	XGlyphInfo extents = { 0 };
@@ -968,7 +1008,7 @@ render()
  * @dpy: (out) display server number.
  * @scr: (out) screen number.
  */
-static int
+int
 parse_display(char *name, char **host, int *dpy, int *scr)
 {
 	char *colon;
@@ -991,7 +1031,7 @@ parse_display(char *name, char **host, int *dpy, int *scr)
  *
  * Return: file descripter or -1.
  */
-static int
+int
 bspwm_connect(Display *dpy)
 {
 	struct sockaddr_un sock;
@@ -1028,7 +1068,7 @@ bspwm_connect(Display *dpy)
  * 0 - success
  * 1 - failure
  */
-static int
+int
 bspwmbar_init(Display *dpy, int scr)
 {
 	XRRScreenResources *xrr_res;
@@ -1091,7 +1131,7 @@ bspwmbar_init(Display *dpy, int scr)
 /**
  * bspwmbar_destroy() - destroy all resources of bspwmbar.
  */
-static void
+void
 bspwmbar_destroy()
 {
 	list_head *cur;
@@ -1131,7 +1171,7 @@ bspwmbar_destroy()
  *
  * Return: sent bytes length.
  */
-static int
+int
 bspwm_send(char *cmd, int len)
 {
 	return send(bar.fd, cmd, len, 0);
@@ -1203,10 +1243,10 @@ systray(DC dc, Option opts)
 }
 
 /**
- * polling_stop() - stop polling to all file descriptor.
+ * poll_stop() - stop polling to all file descriptor.
  */
-static void
-polling_stop()
+void
+poll_stop()
 {
 	if (pfd > 0)
 		close(pfd);
@@ -1219,7 +1259,7 @@ polling_stop()
  *
  * Return: always 0.
  */
-static int
+int
 error_handler(Display *dpy, XErrorEvent *err)
 {
 	switch (err->type) {
@@ -1241,7 +1281,7 @@ error_handler(Display *dpy, XErrorEvent *err)
 	err("  ResourceID: %ld\n", err->resourceid);
 	err("  SerialNumer: %ld\n", err->serial);
 
-	polling_stop();
+	poll_stop();
 
 	return 0;
 }
@@ -1300,7 +1340,7 @@ poll_del(PollFD *pollfd)
  *
  * The function must be called before poll_add(), poll_del().
  */
-static void
+void
 poll_init()
 {
 	list_head_init(&pollfds);
@@ -1315,7 +1355,7 @@ poll_init()
  *
  * always - PR_UPDATE
  */
-static PollResult
+PollResult
 timer_reset(int fd)
 {
 	uint64_t tcnt;
@@ -1337,7 +1377,7 @@ timer_reset(int fd)
  * success and need rerendering     - PR_UPDATE
  * failed to read from fd           - PR_FAILED
  */
-static PollResult
+PollResult
 bspwm_handle(int fd)
 {
 	size_t len;
@@ -1369,7 +1409,7 @@ bspwm_handle(int fd)
  * 0 - false
  * 1 - true
  */
-static int
+int
 is_change_active_window_event(XEvent ev)
 {
 	Window win = RootWindow(bar.dpy, bar.scr);
@@ -1384,7 +1424,7 @@ is_change_active_window_event(XEvent ev)
  * PR_NOOP   - success and not need more action
  * PR_UPDATE - success and need rerendering
  */
-static PollResult
+PollResult
 xev_handle()
 {
 	XEvent event;
@@ -1447,7 +1487,7 @@ xev_handle()
  * poll_loop() - polling loop
  * @handler: rendering function
  */
-static void
+void
 poll_loop(void (* handler)())
 {
 	int i, nfd, need_render;
@@ -1516,12 +1556,13 @@ poll_loop(void (* handler)())
  *
  * The function stop polling if signum equals SIGINT or SIGTERM.
  */
-static void
-signal_handler(int signum) {
+void
+signal_handler(int signum)
+{
 	switch (signum) {
 	case SIGINT:
 	case SIGTERM:
-		polling_stop();
+		poll_stop();
 		break;
 	}
 }
@@ -1529,7 +1570,7 @@ signal_handler(int signum) {
 /**
  * cleanup() - cleanup resources
  */
-static void
+void
 cleanup(Display *dpy)
 {
 	int i;

@@ -36,6 +36,10 @@ typedef struct {
 } CoreInfo;
 #endif
 
+/* functions */
+static int num_procs();
+static int cpu_perc(double **);
+
 static const char *deffgcols[4] = {
 	"#449f3d", /* success color */
 	"#2f8419", /* normal color */
@@ -44,7 +48,7 @@ static const char *deffgcols[4] = {
 };
 static double *loadavgs = NULL;
 
-static int
+int
 num_procs()
 {
 	static int nproc = 0;
@@ -65,7 +69,7 @@ num_procs()
 #endif
 }
 
-static int
+int
 cpu_perc(double **cores)
 {
 	static CoreInfo *a = NULL;
@@ -173,7 +177,7 @@ cpugraph(DC dc, Option opts)
 		}
 	}
 
-	if (!opts.prefix)
-		opts.prefix = "";
-	draw_bargraph(dc, opts.prefix, items, ncore);
+	if (!opts.cpu.prefix)
+		opts.cpu.prefix = "";
+	draw_bargraph(dc, opts.cpu.prefix, items, ncore);
 }

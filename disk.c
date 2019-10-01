@@ -8,7 +8,11 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static inline int
+/* functions */
+static inline int calc_used(struct statvfs);
+static int disk_perc(const char *);
+
+int
 calc_used(struct statvfs mp)
 {
 	return (mp.f_blocks - mp.f_bavail) / (double)mp.f_blocks * 100 + 0.5;
@@ -33,11 +37,11 @@ disk_perc(const char *mpoint)
 void
 filesystem(DC dc, Option opts)
 {
-	int perc = disk_perc(opts.arg);
-	if (!opts.prefix)
-		opts.prefix = "";
-	if (!opts.suffix)
-		opts.suffix = "";
-	sprintf(buf, "%s%d%s", opts.prefix, perc, opts.suffix);
+	int perc = disk_perc(opts.any.arg);
+	if (!opts.any.prefix)
+		opts.any.prefix = "";
+	if (!opts.any.suffix)
+		opts.any.suffix = "";
+	sprintf(buf, "%s%d%s", opts.any.prefix, perc, opts.any.suffix);
 	draw_text(dc, buf);
 }

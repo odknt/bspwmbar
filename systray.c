@@ -52,7 +52,18 @@ struct _SystemTray {
 	list_head items;
 };
 
-static Atom
+/* functions */
+static int xembed_send(Display *, Window, long, long, long, long);
+static int xembed_embedded_notify(SystemTray, Window, long);
+static int xembed_unembed_window(SystemTray, Window);
+static int xembed_getinfo(SystemTray, Window, XEmbedInfo *);
+static Atom get_systray_atom(Display *);
+static void set_selection_owner(SystemTray, Atom);
+static int systray_get_ownership(SystemTray);
+static TrayItem *systray_append_item(SystemTray, Window);
+static TrayItem *systray_find_item(SystemTray, Window);
+
+Atom
 get_systray_atom(Display *dpy)
 {
 	static Atom systray_atom = 0;
@@ -65,13 +76,13 @@ get_systray_atom(Display *dpy)
 	return systray_atom;
 }
 
-static void
+void
 set_selection_owner(SystemTray tray, Atom atom)
 {
 	XSetSelectionOwner(tray->dpy, atom, tray->win, CurrentTime);
 }
 
-static int
+int
 systray_get_ownership(SystemTray tray)
 {
 	Atom atom = get_systray_atom(tray->dpy);
@@ -121,7 +132,7 @@ systray_new(Display *dpy, Window win)
 	return tray;
 }
 
-static int
+int
 xembed_send(Display *dpy, Window win, long message, long d1, long d2, long d3)
 {
 	XEvent ev = { 0 };
@@ -141,14 +152,14 @@ xembed_send(Display *dpy, Window win, long message, long d1, long d2, long d3)
 	return 0;
 }
 
-static int
+int
 xembed_embedded_notify(SystemTray tray, Window win, long version)
 {
 	return xembed_send(tray->dpy, win, XEMBED_EMBEDDED_NOTIFY, 0, tray->win,
 	                   version);
 }
 
-static int
+int
 xembed_unembed_window(SystemTray tray, Window child)
 {
 	XUnmapWindow(tray->dpy, child);
@@ -158,7 +169,7 @@ xembed_unembed_window(SystemTray tray, Window child)
 	return 0;
 }
 
-static int
+int
 xembed_getinfo(SystemTray tray, Window win, XEmbedInfo *info)
 {
 	Atom type, infoatom;
@@ -181,7 +192,7 @@ xembed_getinfo(SystemTray tray, Window win, XEmbedInfo *info)
 	return 0;
 }
 
-static TrayItem *
+TrayItem *
 systray_append_item(SystemTray tray, Window win)
 {
 	TrayItem *item = calloc(1, sizeof(TrayItem));
@@ -192,7 +203,7 @@ systray_append_item(SystemTray tray, Window win)
 	return item;
 }
 
-static TrayItem *
+TrayItem *
 systray_find_item(SystemTray tray, Window win)
 {
 	list_head *pos;

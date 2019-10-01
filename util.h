@@ -2,7 +2,6 @@
 
 #ifndef BSPWMBAR_UTIL_H_
 #define BSPWMBAR_UTIL_H_
-#include <unistd.h>
 
 /* utility macros */
 #define LENGTH(X)        (sizeof (X) / sizeof (X[0]))
@@ -27,7 +26,7 @@ typedef struct _list_head {
 #define list_for_each(head, pos) \
 for (pos = (head)->next; pos != (head); pos = pos->next)
 #define list_entry(ptr, type, member) \
-((type *)((char *)(ptr)-(intptr_t)(&((type *)0)->member)))
+((type *)((char *)(ptr)-(char *)(&((type *)0)->member)))
 #define list_empty(head) ((head)->next == (head))
 #define list_count(head, num) \
 for (list_head *pos = (head)->next; pos != (head); pos = pos->next) num++

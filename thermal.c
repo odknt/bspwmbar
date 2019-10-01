@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <time.h>
 
 #include "bspwmbar.h"
@@ -16,7 +17,7 @@ thermal(DC dc, Option opts)
 	static int thermal_found = -1;
 
 	if (thermal_found == -1) {
-		if (access(opts.arg, F_OK) != -1)
+		if (access(opts.any.arg, F_OK) != -1)
 			thermal_found = 1;
 		else
 			thermal_found = 0;
@@ -29,14 +30,14 @@ thermal(DC dc, Option opts)
 		goto DRAW_THERMAL;
 	prevtime = curtime;
 
-	if (pscanf(opts.arg, "%ju", &temp) == -1)
+	if (pscanf(opts.any.arg, "%ju", &temp) == -1)
 		return;
 
 DRAW_THERMAL:
-	if (!opts.prefix)
-		opts.prefix = "";
-	if (!opts.suffix)
-		opts.suffix = "";
-	sprintf(buf, "%s%lu%s", opts.prefix, temp / 1000, opts.suffix);
+	if (!opts.any.prefix)
+		opts.any.prefix = "";
+	if (!opts.any.suffix)
+		opts.any.suffix = "";
+	sprintf(buf, "%s%lu%s", opts.any.prefix, temp / 1000, opts.any.suffix);
 	draw_text(dc, buf);
 }

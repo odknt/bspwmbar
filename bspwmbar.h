@@ -17,40 +17,58 @@ typedef enum {
 typedef struct _Color *Color;
 
 typedef struct {
+	char *prefix;
+	char *suffix;
+
 	double val;
 	Color fg, bg;
 } GraphItem;
 
 typedef struct {
+	char *prefix;
+	char *suffix;
+
 	char *muted;
 	char *unmuted;
 } VolumeOption;
 
 typedef struct {
+	char *prefix;
+	char *suffix;
+
 	char *active;
 	char *inactive;
 } DesktopOption;
 
 typedef struct {
+	char *prefix;
+	char *suffix;
+
 	char *label;
 	char *fg;
 } TextOption;
 
 typedef struct {
+	char *prefix;
+	char *suffix;
+
 	char *cols[4];
 } GraphOption;
 
 typedef struct {
-	const char *prefix;
-	const char *suffix;
-	union {
-		const char *arg;
-		const VolumeOption vol;
-		const DesktopOption desk;
-		const TextOption text;
-		const GraphOption cpu;
-		const GraphOption mem;
-	};
+	char *prefix;
+	char *suffix;
+
+	char *arg;
+} AnyOption;
+
+typedef union {
+	AnyOption any;
+	VolumeOption vol;
+	DesktopOption desk;
+	TextOption text;
+	GraphOption cpu;
+	GraphOption mem;
 } Option;
 
 /* Draw context */

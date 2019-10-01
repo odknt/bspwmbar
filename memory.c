@@ -21,6 +21,10 @@ typedef struct {
 typedef struct uvmexp MemInfo;
 #endif
 
+/* functions */
+static inline double calc_used(MemInfo);
+static double mem_perc();
+
 static const char *deffgcols[4] = {
 	"#449f3d", /* success color */
 	"#2f8419", /* normal color */
@@ -28,7 +32,7 @@ static const char *deffgcols[4] = {
 	"#ed5456", /* critical color */
 };
 
-static inline double
+double
 calc_used(MemInfo mem)
 {
 #if defined(__linux)
@@ -38,7 +42,7 @@ calc_used(MemInfo mem)
 #endif
 }
 
-static double
+double
 mem_perc()
 {
 	static time_t prevtime = { 0 };
@@ -99,7 +103,7 @@ memgraph(DC dc, Option opts)
 		else
 			items[i].fg = fgcols[3];
 	}
-	if (!opts.prefix)
-		opts.prefix = "";
-	draw_bargraph(dc, opts.prefix, items, 10);
+	if (!opts.mem.prefix)
+		opts.mem.prefix = "";
+	draw_bargraph(dc, opts.mem.prefix, items, 10);
 }
