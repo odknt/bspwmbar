@@ -169,6 +169,7 @@ static list_head pollfds;
 
 /* private functions */
 static int error_handler(Display *, XErrorEvent *);
+static int dummy_handler(Display *, XErrorEvent *);
 static void signal_handler(int);
 static int parse_display(char *, char **, int *, int *);
 static Bool xft_color_load(const char *, XftColor *);
@@ -1226,6 +1227,8 @@ systray(DC dc, Option opts)
 
 	draw_padding(dc, celwidth);
 	list_head *pos;
+
+	XSetErrorHandler(dummy_handler);
 	list_for_each(systray_get_items(tray), pos) {
 		TrayItem *item = list_entry(pos, TrayItem, head);
 		if (!item->info.flags)
@@ -1240,6 +1243,7 @@ systray(DC dc, Option opts)
 		draw_padding(dc, celwidth);
 	}
 	draw_padding(dc, celwidth);
+	XSetErrorHandler(error_handler);
 }
 
 /**
@@ -1282,6 +1286,22 @@ error_handler(Display *dpy, XErrorEvent *err)
 	err("  SerialNumer: %ld\n", err->serial);
 
 	poll_stop();
+
+	return 0;
+}
+
+/**
+ * dummy_handler() - X11 error handler that dummy.
+ * @dpy: display pointer.
+ * @err: XErrorEvent.
+ *
+ * Return: always 0.
+ */
+int
+dummy_handler(Display *dpy, XErrorEvent *err)
+{
+	(void)dpy;
+	(void)err;
 
 	return 0;
 }
@@ -1472,6 +1492,10 @@ xev_handle()
 			break;
 		case ClientMessage:
 			systray_handle(tray, event);
+			res = PR_UPDATE;
+			break;
+		case UnmapNotify:
+			systray_remove_item(tray, event.xunmap.window);
 			res = PR_UPDATE;
 			break;
 		case DestroyNotify:
