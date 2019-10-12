@@ -368,11 +368,11 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width,
 	set_window_prop(dpy, xw->win, XA_ATOM, "_NET_WM_WINDOW_TYPE",
 	                PropModeReplace, _net_wm_window_types,
 	                LENGTH(_net_wm_window_types));
-	long strut[] = { 0, 0, height, 0 };
+	long strut[] = { 0, 0, y + height, 0 };
 	set_window_prop(dpy, xw->win, XA_CARDINAL, "_NET_WM_STRUT", PropModeReplace,
 	                strut, 4);
 	long strut_partial[] = {
-		0, 0, height, 0,
+		0, 0, y + height, 0,
 		0, 0, 0, 0,
 		x, x + width - 1, 0, 0,
 	};
@@ -1013,7 +1013,7 @@ bspwmbar_init(Display *dpy, int scr)
 			for (j = 0; j < nmon; j++) {
 				if (xrr_res->outputs[i] != xrr_mon[j].outputs[0])
 					continue;
-				dc_init(bar.dcs[j], dpy, scr, xrr_mon[j].x, 0,
+				dc_init(bar.dcs[j], dpy, scr, xrr_mon[j].x, xrr_mon[j].y,
 				             xrr_mon[j].width, BAR_HEIGHT);
 				strncpy(bar.dcs[j]->xbar.monitor.name, xrr_out->name,
 				        NAME_MAXSZ);
