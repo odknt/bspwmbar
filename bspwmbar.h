@@ -4,7 +4,6 @@
 #define BSPWMBAR_H_
 
 #include <X11/Xlib.h>
-#include <X11/Xft/Xft.h>
 
 #include "util.h"
 
@@ -15,14 +14,22 @@ typedef enum {
 	PR_FAILED
 } PollResult;
 
+typedef struct _Color *Color;
+
 typedef struct {
+	char *prefix;
+	char *suffix;
+
 	double val;
-	int    colorno;
+	Color fg, bg;
 } GraphItem;
+
+typedef union _Module Module;
+typedef Module *Option;
 
 /* Draw context */
 typedef struct _DC *DC;
-typedef void (* ModuleHandler)(DC, const char *);
+typedef void (* ModuleHandler)(DC, Option);
 typedef void (* XEventHandler)(XEvent);
 
 /* Poll */
@@ -42,13 +49,92 @@ void poll_add(PollFD *);
 void poll_del(PollFD *);
 
 /* Module */
-typedef struct {
-	ModuleHandler func;
-	const char *arg;
-	XEventHandler handler;
-} Module;
+#define ModuleBase \
+	ModuleHandler func; \
+	XEventHandler handler; \
+	char *prefix; \
+	char *suffix
 
-XftColor *getcolor(int);
+typedef struct {
+	ModuleBase;
+
+	char *muted;
+	char *unmuted;
+} VolumeModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *active;
+	char *inactive;
+} DesktopModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *label;
+	char *fg;
+} TextModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *cols[4];
+} GraphModule;
+
+typedef struct {
+	ModuleBase;
+
+	unsigned int maxlen;
+	char *ellipsis;
+} TitleModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *format;
+} DateTimeModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *sensor;
+} ThermalModule;
+
+typedef struct {
+	ModuleBase;
+
+	char *mountpoint;
+} FileSystemModule;
+
+typedef struct {
+	ModuleBase;
+} AnyModule;
+
+typedef struct {
+	ModuleBase;
+
+	int iconsize;
+} SystrayModule;
+
+union _Module {
+	AnyModule any;
+	SystrayModule tray;
+	DateTimeModule date;
+	FileSystemModule fs;
+	VolumeModule vol;
+	DesktopModule desk;
+	TextModule text;
+	GraphModule cpu;
+	GraphModule mem;
+	TitleModule title;
+	ThermalModule thermal;
+};
+
+Color color_load(const char *);
+Color color_default_fg();
+Color color_default_bg();
+
 void draw_text(DC, const char *);
 void draw_bargraph(DC, const char *, GraphItem *, int);
 
@@ -56,15 +142,15 @@ void draw_bargraph(DC, const char *, GraphItem *, int);
 void volume_ev(XEvent);
 
 /* modules */
-void logo(DC, const char *);
-void desktops(DC, const char *);
-void windowtitle(DC, const char *);
-void filesystem(DC, const char *);
-void thermal(DC, const char *);
-void volume(DC, const char *);
-void datetime(DC, const char *);
-void cpugraph(DC, const char *);
-void memgraph(DC, const char *);
-void systray(DC, const char *);
+void text(DC, Option);
+void desktops(DC, Option);
+void windowtitle(DC, Option);
+void filesystem(DC, Option);
+void thermal(DC, Option);
+void volume(DC, Option);
+void datetime(DC, Option);
+void cpugraph(DC, Option);
+void memgraph(DC, Option);
+void systray(DC, Option);
 
 #endif

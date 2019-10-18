@@ -36,7 +36,19 @@ typedef struct {
 } CoreInfo;
 #endif
 
-static int
+/* functions */
+static int num_procs();
+static int cpu_perc(double **);
+
+static const char *deffgcols[4] = {
+	"#449f3d", /* success color */
+	"#2f8419", /* normal color */
+	"#f5a70a", /* warning color */
+	"#ed5456", /* critical color */
+};
+static double *loadavgs = NULL;
+
+int
 num_procs()
 {
 	static int nproc = 0;
@@ -57,9 +69,7 @@ num_procs()
 #endif
 }
 
-static double *loadavgs = NULL;
-
-static int
+int
 cpu_perc(double **cores)
 {
 	static CoreInfo *a = NULL;
@@ -137,26 +147,37 @@ cpu_perc(double **cores)
 }
 
 void
-cpugraph(DC dc, const char *arg)
+cpugraph(DC dc, Option opts)
 {
-	(void)arg;
-
+	Color fgcols[4];
+	Color bgcol;
 	double *vals = NULL;
-	int ncore = cpu_perc(&vals);
+	int i, ncore = cpu_perc(&vals);
+
+	bgcol = color_load("#555555");
+	for (i = 0; i < 4; i++) {
+		if (opts->cpu.cols[i])
+			fgcols[i] = color_load(opts->cpu.cols[i]);
+		else
+			fgcols[i] = color_load(deffgcols[i]);
+	}
 
 	GraphItem *items = (GraphItem *)alloca(sizeof(GraphItem) * ncore);
 	for (int i = 0; i < ncore; i++) {
+		items[i].bg = bgcol;
 		items[i].val = vals[i];
 		if (vals[i] < 0.3) {
-			items[i].colorno = 4;
+			items[i].fg = fgcols[0];
 		} else if (vals[i] < 0.6) {
-			items[i].colorno = 5;
+			items[i].fg = fgcols[1];
 		} else if (vals[i] < 0.8) {
-			items[i].colorno = 6;
+			items[i].fg = fgcols[2];
 		} else {
-			items[i].colorno = 7;
+			items[i].fg = fgcols[3];
 		}
 	}
 
-	draw_bargraph(dc, "cpu: ", items, ncore);
+	if (!opts->cpu.prefix)
+		opts->cpu.prefix = "";
+	draw_bargraph(dc, opts->cpu.prefix, items, ncore);
 }

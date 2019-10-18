@@ -8,7 +8,11 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static inline int
+/* functions */
+static inline int calc_used(struct statvfs);
+static int disk_perc(const char *);
+
+int
 calc_used(struct statvfs mp)
 {
 	return (mp.f_blocks - mp.f_bavail) / (double)mp.f_blocks * 100 + 0.5;
@@ -31,9 +35,13 @@ disk_perc(const char *mpoint)
 }
 
 void
-filesystem(DC dc, const char *mpoint)
+filesystem(DC dc, Option opts)
 {
-	int perc = disk_perc(mpoint);
-	sprintf(buf, " %d％", perc);
+	int perc = disk_perc(opts->fs.mountpoint);
+	if (!opts->fs.prefix)
+		opts->fs.prefix = "";
+	if (!opts->fs.suffix)
+		opts->fs.suffix = "";
+	sprintf(buf, "%s%d%s", opts->fs.prefix, perc, opts->fs.suffix);
 	draw_text(dc, buf);
 }

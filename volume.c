@@ -1,5 +1,9 @@
 /* See LICENSE file for copyright and license details. */
 
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/audioio.h>
@@ -13,6 +17,13 @@
   !strncmp((dinfo).label.name, AudioNmaster, MAX_AUDIO_DEV_LEN)) || \
  ((dinfo).type == AUDIO_MIXER_ENUM && \
   !strncmp((dinfo).label.name, AudioNmute, MAX_AUDIO_DEV_LEN)))
+
+/* functions */
+static int get_volume(int);
+static int is_muted(int);
+static void init_devinfo(int);
+static void toggle_mute(int);
+static void set_volume(int, int);
 
 static char *file = NULL;
 static mixer_ctrl_t vctrl = { 0 };
@@ -90,10 +101,8 @@ init_devinfo(int fd)
 }
 
 void
-volume(DC dc, const char *args)
+volume(DC dc, Option opts)
 {
-	(void)args;
-
 	if (!file) {
 		if ((file = getenv("MIXERDEVICE")) == 0 || *file == '\0')
 			file = "/dev/mixer";
@@ -106,8 +115,14 @@ volume(DC dc, const char *args)
 	if (!initialized)
 		init_devinfo(fd);
 
-	const char *mark = is_muted(fd) ? "婢" : "墳";
-	sprintf(buf, "%s %d％", mark, get_volume(fd) * 100 / 255);
+	if (!opts->vol.prefix)
+		opts->vol.prefix = "";
+	if (!opts->vol.suffix)
+		opts->vol.suffix = "";
+
+	const char *mark = is_muted(fd) ? opts->vol.muted : opts->vol.unmuted;
+	sprintf(buf, "%s%s %d%s", opts->vol.prefix, mark, get_volume(fd) * 100 / 255,
+	                          opts->vol.suffix);
 	draw_text(dc, buf);
 
 	close(fd);

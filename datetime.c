@@ -3,6 +3,7 @@
 #if defined(__linux)
 # include <alloca.h>
 #endif
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -11,17 +12,23 @@
 #include "bspwmbar.h"
 #include "util.h"
 
-static const char *prefix = " ";
-
 void
-datetime(DC dc, const char *fmt)
+datetime(DC dc, Option opts)
 {
 	time_t timer = time(NULL);
 	struct tm *tptr = localtime(&timer);
 
-	int size = SMALLER(strlen(fmt) + strlen(prefix) + 1, 128);
+	if (!opts->date.format)
+		die("datetime(): arg is required for datetime");
+	if (!opts->date.prefix)
+		opts->date.prefix = "";
+	if (!opts->date.suffix)
+		opts->date.suffix = "";
+	int size = SMALLER(strlen(opts->date.format) + strlen(opts->date.prefix) +
+	                   strlen(opts->date.prefix) + 1, 128);
 	char *format = alloca(size);
-	snprintf(format, size, "%s%s", prefix, fmt);
+	snprintf(format, size, "%s%s%s", opts->date.prefix, opts->date.format,
+	         opts->date.suffix);
 	strftime(buf, sizeof(buf), format, tptr);
 
 	draw_text(dc, buf);

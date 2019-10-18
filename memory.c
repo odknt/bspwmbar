@@ -21,17 +21,28 @@ typedef struct {
 typedef struct uvmexp MemInfo;
 #endif
 
-static inline double
+/* functions */
+static inline double calc_used(MemInfo);
+static double mem_perc();
+
+static const char *deffgcols[4] = {
+	"#449f3d", /* success color */
+	"#2f8419", /* normal color */
+	"#f5a70a", /* warning color */
+	"#ed5456", /* critical color */
+};
+
+double
 calc_used(MemInfo mem)
 {
 #if defined(__linux)
-	return (mem.total - mem.available) / (double)mem.total;
+	return (double)(mem.total - mem.available) / mem.total;
 #elif defined(__OpenBSD__)
-	return mem.active * 100 / mem.npages;
+	return (double)mem.active / mem.npages;
 #endif
 }
 
-static double
+double
 mem_perc()
 {
 	static time_t prevtime = { 0 };
@@ -64,21 +75,35 @@ mem_perc()
 }
 
 void
-memgraph(DC dc, const char *arg)
+memgraph(DC dc, Option opts)
 {
-	(void)arg;
-	double used = mem_perc();
 	GraphItem items[10];
+	Color fgcols[4];
+	Color bgcol;
+	double used = mem_perc();
+	int i;
+
+	bgcol = color_load("#555555");
+	for (i = 0; i < 4; i++) {
+		if (opts->mem.cols[i])
+			fgcols[i] = color_load(opts->cpu.cols[i]);
+		else
+			fgcols[i] = color_load(deffgcols[i]);
+	}
+
 	for (int i = 0; i < 10; i++) {
+		items[i].bg = bgcol;
 		items[i].val = (used > ((double)i / 10)) ? 1 : -1;
 		if (i < 3)
-			items[i].colorno = 4;
+			items[i].fg = fgcols[0];
 		else if (i < 6)
-			items[i].colorno = 5;
+			items[i].fg = fgcols[1];
 		else if (i < 8)
-			items[i].colorno = 6;
+			items[i].fg = fgcols[2];
 		else
-			items[i].colorno = 7;
+			items[i].fg = fgcols[3];
 	}
-	draw_bargraph(dc, "mem: ", items, 10);
+	if (!opts->mem.prefix)
+		opts->mem.prefix = "";
+	draw_bargraph(dc, opts->mem.prefix, items, 10);
 }

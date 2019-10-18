@@ -3,22 +3,21 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <time.h>
 
 #include "bspwmbar.h"
 #include "util.h"
 
-static char *format = " %d℃";
-
 void
-thermal(DC dc, const char *thermal_path)
+thermal(DC dc, Option opts)
 {
 	static time_t prevtime;
-	static uintmax_t temp;
+	static unsigned long temp;
 	static int thermal_found = -1;
 
 	if (thermal_found == -1) {
-		if (access(thermal_path, F_OK) != -1)
+		if (access(opts->thermal.sensor, F_OK) != -1)
 			thermal_found = 1;
 		else
 			thermal_found = 0;
@@ -31,10 +30,15 @@ thermal(DC dc, const char *thermal_path)
 		goto DRAW_THERMAL;
 	prevtime = curtime;
 
-	if (pscanf(thermal_path, "%ju", &temp) == -1)
+	if (pscanf(opts->thermal.sensor, "%ju", &temp) == -1)
 		return;
 
 DRAW_THERMAL:
-	sprintf(buf, format, temp / 1000);
+	if (!opts->thermal.prefix)
+		opts->thermal.prefix = "";
+	if (!opts->thermal.suffix)
+		opts->thermal.suffix = "";
+	sprintf(buf, "%s%lu%s", opts->thermal.prefix, temp / 1000,
+	        opts->thermal.suffix);
 	draw_text(dc, buf);
 }

@@ -27,7 +27,16 @@ static int initialized = 0;
 static AlsaInfo info = { 0 };
 static PollFD pfd = { 0 };
 
-static void
+/* functions */
+static void get_info(snd_mixer_elem_t *);
+static void toggle_mute(snd_mixer_elem_t *);
+static void set_volume(snd_mixer_elem_t *, long);
+static void alsa_control(uint8_t);
+static int alsa_connect();
+static int alsa_disconnect();
+static PollResult alsa_update(int);
+
+void
 get_info(snd_mixer_elem_t *elem)
 {
 	if (!initialized) {
@@ -44,7 +53,7 @@ get_info(snd_mixer_elem_t *elem)
 		info.unmuted = 1;
 }
 
-static void
+void
 toggle_mute(snd_mixer_elem_t *elem)
 {
 	if (!info.has_switch)
@@ -53,7 +62,7 @@ toggle_mute(snd_mixer_elem_t *elem)
 	snd_mixer_selem_set_playback_switch_all(elem, info.unmuted);
 }
 
-static void
+void
 set_volume(snd_mixer_elem_t *elem, long volume)
 {
 	if (!BETWEEN(volume, info.min, info.max))
@@ -61,7 +70,7 @@ set_volume(snd_mixer_elem_t *elem, long volume)
 	snd_mixer_selem_set_playback_volume_all(elem, volume);
 }
 
-static void
+void
 alsa_control(uint8_t ctlno)
 {
 	snd_mixer_elem_t *elem = NULL;
@@ -160,17 +169,23 @@ alsa_init()
 }
 
 void
-volume(DC dc, const char *arg)
+volume(DC dc, Option opts)
 {
-	(void)arg;
 	if (!pfd.fd)
 		alsa_init();
+
+	if (!opts->vol.prefix)
+		opts->vol.prefix = "";
+	if (!opts->vol.suffix)
+		opts->vol.suffix = "";
 
 	if (!info.volume)
 		alsa_control(ALSACTL_GETINFO);
 
-	const char *mark = (info.unmuted) ? "墳" : "婢";
-	sprintf(buf, "%s %.0lf％", mark, (double)info.volume / info.max * 100);
+	const char *mark = (info.unmuted) ? opts->vol.unmuted : opts->vol.muted;
+	sprintf(buf, "%s%s %.0lf%s", opts->vol.prefix,  mark,
+	                             (double)info.volume / info.max * 100,
+	                             opts->vol.suffix);
 	draw_text(dc, buf);
 }
 
