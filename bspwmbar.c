@@ -36,6 +36,10 @@
 #include "systray.h"
 #include "config.h"
 
+#if !defined(VERSION)
+# define VERSION "v0.0.0-dev"
+#endif
+
 /* bspwm commands */
 #define SUBSCRIBE_REPORT "subscribe\0report"
 /* epoll max events */
@@ -208,6 +212,7 @@ static PollResult timer_reset(int);
 #endif
 static int is_change_active_window_event(XEvent);
 static void cleanup(Display *);
+static void run();
 
 /**
  * load_xft_color() - get XftColor by color name.
@@ -1610,12 +1615,9 @@ cleanup(Display *dpy)
 	FcFini();
 }
 
-int
-main(int argc, char *argv[])
+void
+run()
 {
-	(void)(argc);
-	(void)(argv);
-
 	Display *dpy;
 	struct sigaction act;
 
@@ -1649,15 +1651,15 @@ main(int argc, char *argv[])
 		goto CLEANUP;
 	}
 
-	/* tray initialize */
-	if (!(tray = systray_new(dpy, bar.dcs[0]->xbar.win))) {
-		err("systray_new(): Selection already owned by other window\n");
-		goto CLEANUP;
-	}
-
 	/* subscribe bspwm report */
 	if (bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1) {
 		err("bspwm_send(): Failed to send command to bspwm\n");
+		goto CLEANUP;
+	}
+
+	/* tray initialize */
+	if (!(tray = systray_new(dpy, bar.dcs[0]->xbar.win))) {
+		err("systray_new(): Selection already owned by other window\n");
 		goto CLEANUP;
 	}
 
@@ -1700,6 +1702,18 @@ main(int argc, char *argv[])
 CLEANUP:
 	/* cleanup resources */
 	cleanup(dpy);
+}
 
-	return 0;
+int
+main(int argc, char *argv[])
+{
+	int opt;
+	while ((opt = getopt(argc, argv, ":v")) != -1) {
+		switch (opt) {
+		case 'v':
+			die("bspwmbar version %s\n", VERSION);
+		}
+	}
+
+	run();
 }
