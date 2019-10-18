@@ -14,7 +14,7 @@ Currently required [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
 
 - [x] Support multiple monitors (Xrandr)
 - [x] Render text
-- [x] Bspwm workspaces
+- [x] Bspwm desktops
 - [x] Active window title
 - [x] Datetime
 - [x] CPU temperature
@@ -27,7 +27,7 @@ Currently required [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
 - [x] Refactor code
 - [x] OpenBSD support
 - [ ] FreeBSD support
-- [ ] Pulseaudio support (just enough only ALSA support?)
+- [ ] Pulseaudio support (The priority is low because pulseaudio has alsa interface)
 - [ ] Decrease memory usage
 
 ## Configure
