@@ -173,7 +173,6 @@ static list_head pollfds;
 
 /* private functions */
 static int error_handler(Display *, XErrorEvent *);
-static int dummy_handler(Display *, XErrorEvent *);
 static void signal_handler(int);
 static int parse_display(char *, char **, int *, int *);
 static Bool xft_color_load(const char *, XftColor *);
@@ -1223,7 +1222,13 @@ desktops(DC dc, Option opts)
 void
 systray(DC dc, Option opts)
 {
+	list_head *pos;
+	int x;
 	(void)opts;
+
+	if (!systray_icon_size(tray))
+		systray_set_icon_size(tray, opts->tray.iconsize);
+
 	if (list_empty(systray_get_items(tray)))
 		return;
 
@@ -1231,24 +1236,25 @@ systray(DC dc, Option opts)
 		return;
 
 	draw_padding(dc, celwidth);
-	list_head *pos;
 
-	XSetErrorHandler(dummy_handler);
+	xerror_begin();
 	list_for_each(systray_get_items(tray), pos) {
 		TrayItem *item = list_entry(pos, TrayItem, head);
 		if (!item->info.flags)
 			continue;
 		draw_padding(dc, opts->tray.iconsize);
-		if (item->x != dc_get_x(dc)) {
-			item->x = dc_get_x(dc);
-			XMoveResizeWindow(bar.dpy, item->win, item->x,
+		x = dc_get_x(dc);
+		if (item->x != x) {
+			XMoveResizeWindow(bar.dpy, item->win, x,
 			                  (BAR_HEIGHT - opts->tray.iconsize) / 2,
 			                  opts->tray.iconsize, opts->tray.iconsize);
+			if (!xerror_catch(bar.dpy))
+				item->x = x;
 		}
 		draw_padding(dc, celwidth);
 	}
 	draw_padding(dc, celwidth);
-	XSetErrorHandler(error_handler);
+	xerror_end();
 }
 
 /**
@@ -1291,22 +1297,6 @@ error_handler(Display *dpy, XErrorEvent *err)
 	err("  SerialNumer: %ld\n", err->serial);
 
 	poll_stop();
-
-	return 0;
-}
-
-/**
- * dummy_handler() - X11 error handler that dummy.
- * @dpy: display pointer.
- * @err: XErrorEvent.
- *
- * Return: always 0.
- */
-int
-dummy_handler(Display *dpy, XErrorEvent *err)
-{
-	(void)dpy;
-	(void)err;
 
 	return 0;
 }

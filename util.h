@@ -38,4 +38,9 @@ void list_add(list_head *head, list_head *entry);
 void list_add_tail(list_head *head, list_head *entry);
 void list_del(list_head *head);
 
+/* Xlib error catch */
+void xerror_begin();
+int xerror_catch(Display *);
+void xerror_end();
+
 #endif

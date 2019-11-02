@@ -32,5 +32,7 @@ void systray_remove_item(SystemTray, Window);
 Window systray_get_window(SystemTray);
 Display *systray_get_display(SystemTray);
 list_head *systray_get_items(SystemTray);
+int systray_icon_size(SystemTray);
+void systray_set_icon_size(SystemTray, int);
 
 #endif /* SYSTRAY_H_ */

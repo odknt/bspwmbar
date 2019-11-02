@@ -49,6 +49,7 @@ enum {
 struct _SystemTray {
 	Display *dpy;
 	Window win;
+	int icon_size;
 	list_head items;
 };
 
@@ -146,7 +147,8 @@ xembed_send(Display *dpy, Window win, long message, long d1, long d2, long d3)
 	ev.xclient.data.l[3] = d2;
 	ev.xclient.data.l[4] = d3;
 
-	XSendEvent(dpy, win, 0, NoEventMask, &ev);
+	if (!XSendEvent(dpy, win, 0, NoEventMask, &ev))
+		return 1;
 	XSync(dpy, 0);
 
 	return 0;
@@ -162,11 +164,16 @@ xembed_embedded_notify(SystemTray tray, Window win, long version)
 int
 xembed_unembed_window(SystemTray tray, Window child)
 {
+	int err;
+	xerror_begin();
+
 	XUnmapWindow(tray->dpy, child);
 	XReparentWindow(tray->dpy, child, DefaultRootWindow(tray->dpy), 0, 0);
-	XSync(tray->dpy, 0);
 
-	return 0;
+	err = xerror_catch(tray->dpy);
+	xerror_end();
+
+	return err;
 }
 
 int
@@ -201,6 +208,18 @@ systray_append_item(SystemTray tray, Window win)
 	list_add_tail(&tray->items, &item->head);
 
 	return item;
+}
+
+void
+systray_set_icon_size(SystemTray tray, int size)
+{
+	tray->icon_size = size;
+}
+
+int
+systray_icon_size(SystemTray tray)
+{
+	return tray->icon_size;
 }
 
 TrayItem *
@@ -251,14 +270,21 @@ systray_handle(SystemTray tray, XEvent ev)
 		case SYSTRAY_REQUEST_DOCK:
 			win = ev.xclient.data.l[SYSTRAY_DATA1];
 
+			/* catch BadWindow error */
+			xerror_begin();
+
 			XSelectInput(tray->dpy, win, StructureNotifyMask | PropertyChangeMask);
+			if (tray->icon_size)
+				XResizeWindow(tray->dpy, win, tray->icon_size, tray->icon_size);
 			XReparentWindow(tray->dpy, win, tray->win, 0, 0);
-
-			if (!(item = systray_append_item(tray, win)))
-				return 1;
-
-			xembed_getinfo(tray, win, &item->info);
 			xembed_embedded_notify(tray, win, 0);
+
+			if (!xerror_catch(tray->dpy)) {
+				item = systray_append_item(tray, win);
+				xembed_getinfo(tray, win, &item->info);
+			}
+			xerror_end();
+
 			break;
 		}
 		break;

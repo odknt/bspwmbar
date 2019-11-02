@@ -3,8 +3,14 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <X11/Xlib.h>
 
 #include "util.h"
+
+static int xerror_handler(Display *, XErrorEvent *);
+
+static int xerror = 0;
+static int (* handler)(Display *, XErrorEvent *) = NULL;
 
 int
 pscanf(const char *path, const char *fmt, ...)
@@ -53,4 +59,39 @@ list_del(list_head *head)
 
 	next->prev = prev;
 	prev->next = next;
+}
+
+void
+xerror_begin()
+{
+	xerror = 0;
+	handler = XSetErrorHandler(xerror_handler);
+}
+
+void
+xerror_end()
+{
+	if (handler)
+		XSetErrorHandler(handler);
+	handler = NULL;
+}
+
+int
+xerror_catch(Display *dpy)
+{
+	int err;
+
+	XSync(dpy, 0);
+	err = xerror;
+	xerror = 0;
+
+	return err;
+}
+
+int
+xerror_handler(Display *dpy, XErrorEvent *err)
+{
+	(void)dpy;
+	xerror = err->type;
+	return 0;
 }
