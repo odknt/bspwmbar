@@ -21,15 +21,26 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include <time.h>
+#include <unistd.h>
 
-/* X11 */
-#include <X11/Xatom.h>
-#include <X11/Xft/Xft.h>
-#include <X11/Xproto.h>
-#include <X11/extensions/Xrandr.h>
-#include <X11/extensions/Xdbe.h>
+/* XCB */
+#include <xcb/xcb.h>
+#include <xcb/xcb_util.h>
+#include <xcb/xcb_ewmh.h>
+#include <xcb/xcb_icccm.h>
+#include <xcb/randr.h>
+
+#include <ft2build.h>
+#include <fontconfig/fontconfig.h>
+#include <fontconfig/fcfreetype.h>
+#include <cairo/cairo.h>
+#include <cairo/cairo-ft.h>
+#include <cairo/cairo-xcb.h>
+#include <harfbuzz/hb.h>
+#include <harfbuzz/hb-ft.h>
 
 /* local headers */
 #include "bspwmbar.h"
@@ -44,120 +55,138 @@
 #define SUBSCRIBE_REPORT "subscribe\0report"
 /* epoll max events */
 #define MAX_EVENTS 10
+/* convert color for cairo */
+#define CONVCOL(x) (double)((x) / 255.0)
+/* check event and returns true if target is the label */
+#define IS_LABEL_EVENT(l,e) (((l).x < (e)->event_x) && ((l).x + (l).width))
 
-/* temporary buffer */
-char buf[1024];
-static XftCharFontSpec glyph_caches[1024];
-
-static char *_net_wm_states[] = {
-	"_NET_WM_STATE_STICKY",
-	"_NET_WM_STATE_ABOVE"
+struct _color_t {
+	char *name;
+	uint16_t red;
+	uint16_t green;
+	uint16_t blue;
+	uint32_t pixel;
 };
-static char *_net_wm_window_types[] = { "_NET_WM_WINDOW_TYPE_DOCK" };
 
-enum {
-	STATE_FREE     = 0,
-	STATE_FOCUSED  = 1 << 1,
-	STATE_OCCUPIED = 1 << 2,
-	STATE_URGENT   = 1 << 3,
+typedef struct {
+	FT_Face face;
+	cairo_font_face_t *cairo;
+	hb_font_t *hb;
+} font_t;
 
-	STATE_ACTIVE = 1 << 8
-};
+typedef struct {
+	font_t *font;
+	cairo_glyph_t glyph;
+} glyph_font_spec_t;
+
+static glyph_font_spec_t glyph_caches[1024];
 
 typedef enum {
 	DA_RIGHT = 0,
 	DA_LEFT,
 	/* currently not supported the below */
 	DA_CENTER
-} DrawAlign;
-
-struct _Color {
-	XftColor xft;
-	char *name;
-};
+} draw_align_t;
 
 typedef struct {
-	FcPattern *pattern;
-	FcFontSet *set;
-	XftFont   *base;
-} XFont;
-
-typedef struct {
-	Option option;
-	DrawAlign align;
-	Color fg, bg;
+	module_option_t *option;
+	draw_align_t align;
+	color_t fg, bg;
 
 	int x, width;
-} Label;
+} label_t;
 
-typedef int DesktopState;
-
-typedef struct {
-	char name[NAME_MAXSZ];
-	DesktopState state;
-} Desktop;
+typedef int desktop_state_t;
 
 typedef struct {
 	char name[NAME_MAXSZ];
-	Desktop *desktops;
+	enum {
+		STATE_FREE     = 0,
+		STATE_FOCUSED  = 1 << 1,
+		STATE_OCCUPIED = 1 << 2,
+		STATE_URGENT   = 1 << 3,
+
+		STATE_ACTIVE = 1 << 8
+	} state;
+} desktop_t;
+
+typedef struct {
+	char name[NAME_MAXSZ];
+	desktop_t *desktops;
 	int ndesktop; /* num of desktops */
 	int cdesktop; /* cap of desktops */
-	Bool is_active;
-} Monitor;
+	uint8_t is_active;
+} monitor_t;
 
 typedef struct {
-	Window win;
-	Monitor monitor;
+	xcb_window_t win;
+	monitor_t monitor;
 
 	int x, y, width, height;
-} BarWindow;
+} window_t;
 
-struct _DC {
-	XdbeSwapInfo swapinfo;
-	BarWindow    xbar;
+struct _draw_context_t {
+	window_t xbar;
 
-	GC        gc;
-	XftDraw   *draw;
-	Drawable  buf;
-	DrawAlign align;
+	xcb_visualtype_t *visual;
+	xcb_gcontext_t gc;
+	xcb_drawable_t buf;
+	draw_align_t align;
+	cairo_t *cr;
 
 	int left_x, right_x;
 
-	Label labels[LENGTH(left_modules) + LENGTH(right_modules)];
-	int   nlabel;
+	label_t labels[LENGTH(left_modules) + LENGTH(right_modules)];
+	int nlabel;
 };
 
 typedef struct {
-	int      fd;
-	Display  *dpy;
-	int      scr;
-	Visual   *vis;
-	Colormap cmap;
-	XFont    font;
-	DC       *dcs;
-	int      ndc;
-	Color    fg, bg;
-} Bspwmbar;
+	/* bspwm socket fd */
+	int fd;
 
-static Bspwmbar bar;
-static SystemTray tray;
-static PollFD bfd, xfd;
+	/* xcb resources */
+	xcb_connection_t *xcb;
+	xcb_screen_t *scr;
+	xcb_visualid_t visual;
+	xcb_colormap_t cmap;
+
+	/* font */
+	font_t font;
+	double font_size;
+	cairo_font_options_t *font_opt;
+	FcPattern *pattern;
+	FcFontSet *set;
+
+	/* draw context */
+	draw_context_t *dcs;
+	int ndc;
+
+	/* base color */
+	color_t *fg, *bg;
+} bspwmbar_t;
+
+static bspwmbar_t bar;
+static systray_t *tray;
+static poll_fd_t bfd, xfd;
 #if defined(__linux)
-static PollFD timer;
+static poll_fd_t timer;
 #endif
 
-static Color *cols;
+static FT_Int32 load_flag = FT_LOAD_COLOR | FT_LOAD_NO_BITMAP | FT_LOAD_NO_AUTOHINT;
+static FT_Library ftlib;
+
+static color_t **cols;
 static int ncol, colcap;
-static XVisualInfo *visinfo;
-static XftFont **fcaches;
+static font_t *fcaches;
 static int nfcache = 0;
 static int fcachecap = 0;
 static int celwidth = 0;
-static int xdbe_support = 0;
+static int graph_maxh = 0;
+static int graph_basey = 0;
 
-/* Atom caches */
-static Atom filter;
-static Atom xembed_info;
+/* EWMH */
+static xcb_ewmh_connection_t ewmh;
+static xcb_atom_t xembed_info;
 
 /* Window title cache */
 static char *wintitle = NULL;
@@ -172,95 +201,112 @@ static struct kevent events[MAX_EVENTS];
 static list_head pollfds;
 
 /* private functions */
-static int error_handler(Display *, XErrorEvent *);
+static void color_load_hex(const char *, color_t *);
+static bool color_load_name(const char *, color_t *);
 static void signal_handler(int);
-static int parse_display(char *, char **, int *, int *);
-static Bool xft_color_load(const char *, XftColor *);
-static void color_free(Color);
-static Window get_active_window(Display *, int);
-static void set_window_prop(Display *, Window, Atom, char *, int, void *, int);
-static unsigned char *get_window_prop(Display *, Window, char *);
-static unsigned char *get_window_title(Display *, Window);
-static XftFont *get_font(FcChar32 rune);
-static int load_fonts(const char *);
-static int load_glyphs(const char *, XftCharFontSpec *, int, int *);
-static void dc_init(DC, Display *, int, int, int, int, int);
-static void dc_free(DC);
-static int dc_get_x(DC);
-static void dc_move_x(DC, int);
-static void dc_calc_render_pos(DC, XftCharFontSpec *, int);
-static void draw_padding(DC, int);
-static void draw_string(DC, Color, const char *);
-static void render_label(DC);
-static int bspwm_connect(Display *);
+static xcb_window_t get_active_window(uint8_t scrno);
+static xcb_visualtype_t *xcb_visualtype_get(xcb_screen_t *);
+static void xcb_gc_color(xcb_connection_t *, xcb_gcontext_t, color_t *);
+static char *get_window_title(xcb_connection_t *, xcb_window_t);
+static FT_UInt get_font(FcChar32 rune, font_t **);
+static bool load_fonts(const char *);
+static void font_destroy(font_t font);
+static size_t load_glyphs_from_hb_buffer(draw_context_t *, hb_buffer_t *, font_t *, int *, int, glyph_font_spec_t *, size_t);
+static int load_glyphs(draw_context_t *, const char *, glyph_font_spec_t *, int, int *);
+static void dc_init(draw_context_t *, xcb_connection_t *, xcb_screen_t *, int, int, int, int);
+static void dc_free(draw_context_t);
+static int dc_get_x(draw_context_t *);
+static void dc_move_x(draw_context_t *, int);
+static void dc_calc_render_pos(draw_context_t *, glyph_font_spec_t *, int);
+static void draw_padding(draw_context_t *, int);
+static void draw_string(draw_context_t *, color_t *, const char *);
+static void draw_glyphs(draw_context_t *, color_t *, const glyph_font_spec_t *, int nglyph);
+static void render_label(draw_context_t *);
+static int bspwm_connect();
 static int bspwm_send(char *, int);
 static void bspwm_parse(char *);
-static DesktopState bspwm_desktop_state(char);
-static void windowtitle_update(Display *, int);
+static desktop_state_t bspwm_desktop_state(char);
+static void windowtitle_update(xcb_connection_t *, uint8_t);
 static void render();
 static int get_baseline();
-static int bspwmbar_init(Display *, int);
+static int bspwmbar_init(xcb_connection_t *, xcb_screen_t *);
 static void bspwmbar_destroy();
 static void poll_init();
 static void poll_loop(void (*)());
 static void poll_stop();
-static PollResult bspwm_handle(int);
-static PollResult xev_handle();
+static poll_result_t bspwm_handle(int);
+static poll_result_t xev_handle();
 #if defined(__linux)
-static PollResult timer_reset(int);
+static poll_result_t timer_reset(int);
 #endif
-static int is_change_active_window_event(XEvent);
-static void cleanup(Display *);
+static bool is_change_active_window_event(xcb_property_notify_event_t *);
+static void cleanup(xcb_connection_t *);
 static void run();
 
-/**
- * load_xft_color() - get XftColor by color name.
- * @colstr: color name.
- * @color: (out) XftColor *.
- *
- * The returned XftColor must call XftColorFree() after used.
- *
- * Return: Bool
- */
-Bool
-xft_color_load(const char *colstr, XftColor *color)
+void
+color_load_hex(const char *colstr, color_t *color)
 {
-	return XftColorAllocName(bar.dpy, bar.vis, bar.cmap, colstr, color);
+	char red[] = { colstr[1], colstr[2], '\0' };
+	char green[] = { colstr[3], colstr[4], '\0' };
+	char blue[] = { colstr[5], colstr[6], '\0' };
+
+	color->name = strdup(colstr);
+	color->red = strtol(red, NULL, 16);
+	color->green = strtol(green, NULL, 16);
+	color->blue = strtol(blue, NULL, 16);
+	color->pixel = 0xff000000 | color->red << 16 | color->green << 8 | color->blue;
+}
+
+bool
+color_load_name(const char *colstr, color_t *color)
+{
+	xcb_alloc_named_color_cookie_t col_cookie;
+	xcb_alloc_named_color_reply_t *col_reply;
+
+	col_cookie = xcb_alloc_named_color(bar.xcb, bar.cmap, strlen(colstr), colstr);
+	if (!(col_reply = xcb_alloc_named_color_reply(bar.xcb, col_cookie, NULL)))
+		return false;
+
+	color->name = strdup(colstr);
+	color->red = col_reply->visual_red;
+	color->green = col_reply->visual_green;
+	color->blue = col_reply->visual_blue;
+	color->pixel = col_reply->pixel;
+
+	free(col_reply);
+	return true;
 }
 
 /**
- * color_load() - load color by the specified name.
+ * color_load() - get color_t from color name.
  * @colstr: color name.
  *
- * Return: Color
+ * Return: color_t *
  */
-Color
+color_t *
 color_load(const char *colstr)
 {
 	int i;
+	/* find color caches */
 	for (i = 0; i < ncol; i++)
 		if (!strncmp(cols[i]->name, colstr, strlen(cols[i]->name)))
 			return cols[i];
+
 	if (ncol >= colcap) {
 		colcap += 5;
-		cols = realloc(cols, sizeof(struct _Color) * colcap);
+		cols = realloc(cols, sizeof(color_t *) * colcap);
 	}
-	cols[ncol] = calloc(1, sizeof(struct _Color));
-	if (!xft_color_load(colstr, &cols[ncol]->xft))
-		return NULL;
-	cols[ncol]->name = strdup(colstr);
-	return cols[ncol++];
-}
+	cols[ncol] = calloc(1, sizeof(color_t));
 
-/**
- * color_free() - free resources of the specified color.
- * @color: color.
- */
-void
-color_free(Color color)
-{
-	XftColorFree(bar.dpy, bar.vis, bar.cmap, &color->xft);
-	free(color->name);
+	if (colstr[0] == '#' && strlen(colstr) > 6)
+		color_load_hex(colstr, cols[ncol]);
+	else
+		color_load_name(colstr, cols[ncol]);
+
+	if (!cols[ncol])
+		die("color_load(): failed to load color: %s", colstr);
+
+	return cols[ncol++];
 }
 
 /**
@@ -268,7 +314,7 @@ color_free(Color color)
  *
  * Return: Color
  */
-Color
+color_t *
 color_default_fg()
 {
 	return bar.fg;
@@ -279,7 +325,7 @@ color_default_fg()
  *
  * Return: Color
  */
-Color
+color_t *
 color_default_bg()
 {
 	return bar.bg;
@@ -295,10 +341,10 @@ color_default_bg()
  * 'F','U','O' - STATE_ACTIVE
  * not match   - STATE_FREE
  */
-DesktopState
+desktop_state_t
 bspwm_desktop_state(char s)
 {
-	DesktopState state = STATE_FREE;
+	desktop_state_t state = STATE_FREE;
 	if ((s | 0x20) == 'o')
 		state = STATE_OCCUPIED;
 	if ((s | 0x20) == 'u')
@@ -309,110 +355,35 @@ bspwm_desktop_state(char s)
 }
 
 /**
- * get_window_prop() - get window property.
- * @dpy: display pointer.
- * @win: target window.
- * @property: property name.
+ * xcb_visualtype_get() - get visualtype
+ * @scr: xcb_screen_t *
  *
- * Return: Property value as (unsigned char *).
- *         The value needs free by call free() after used.
+ * Return: xcb_visual_type *
  */
-unsigned char *
-get_window_prop(Display *dpy, Window win, char *property)
+xcb_visualtype_t *
+xcb_visualtype_get(xcb_screen_t *scr)
 {
-	Atom type, filter;
-	int format, status;
-	unsigned long nitem, bytes_after;
-	unsigned char *prop;
+	xcb_visualtype_t *visual_type;
+	xcb_depth_iterator_t depth_iter;
+	depth_iter = xcb_screen_allowed_depths_iterator(scr);
+	for (; depth_iter.rem; xcb_depth_next(&depth_iter)) {
+		xcb_visualtype_iterator_t visual_iter;
 
-	filter = XInternAtom(dpy, property, 1);
-	status = XGetWindowProperty(dpy, win, filter, 0, TITLE_MAXSZ, 0,
-	                            AnyPropertyType, &type, &format, &nitem,
-	                            &bytes_after, &prop);
-	if (status != Success)
-		return NULL;
-
-	return prop;
-}
-
-/**
- * set_window_prop() - set window property.
- * @dpy: display pointer.
- * @win: window.
- * @type: Atom type.
- * @property: property name.
- * @mode: operation mode. Prease see XChangeProperty(3).
- * @propvalue: property values array.
- * @nvalue: length of propvalue.
- */
-void
-set_window_prop(Display *dpy, Window win, Atom type, char *property, int mode,
-                void *propvalue, int nvalue)
-{
-	Atom prop;
-	void *values;
-	int format = 8;
-
-	prop = XInternAtom(dpy, property, 1);
-	switch (type) {
-	case XA_ATOM:
-		values = alloca(sizeof(Atom) * nvalue);
-		Atom *atomvals = (Atom *)values;
-		char **vals = (char **)propvalue;
-		for (int i = 0; i < nvalue; i++)
-			atomvals[i] = XInternAtom(dpy, vals[i], 1);
-		format = 32;
-		break;
-	case XA_CARDINAL:
-		values = propvalue;
-		format = 32;
-		break;
-	default:
-		return;
+		visual_iter = xcb_depth_visuals_iterator(depth_iter.data);
+		for (; visual_iter.rem; xcb_visualtype_next(&visual_iter)) {
+			if (scr->root_visual == visual_iter.data->visual_id) {
+				visual_type = visual_iter.data;
+				return visual_type;
+			}
+		}
 	}
-
-	XChangeProperty(dpy, win, prop, type, format, mode, (unsigned char *)values,
-	                nvalue);
-}
-
-/**
- * get_visual_info() - get XVisualInfo object.
- * @dpy: display pointer.
- *
- * This function needs Xdbe support.
- *
- * Return: XVisualInfo *
- */
-XVisualInfo *
-get_visual_info(Display *dpy)
-{
-	if (visinfo)
-		return visinfo;
-
-	int nscreen = 1;
-	Drawable screens[] = { DefaultRootWindow(dpy) };
-	XdbeScreenVisualInfo *info = XdbeGetVisualInfo(dpy, screens, &nscreen);
-	if (!info || nscreen < 1 || info->count < 1)
-		die("XdbeScreenVisualInfo(): does not supported\n");
-
-	XVisualInfo vistmpl;
-	vistmpl.visualid = info->visinfo[0].visual;
-	vistmpl.screen = 0;
-	vistmpl.depth = info->visinfo[0].depth;
-	XdbeFreeVisualInfo(info);
-
-	int nmatch;
-	int mask = VisualIDMask | VisualScreenMask | VisualDepthMask;
-	visinfo = XGetVisualInfo(dpy, mask, &vistmpl, &nmatch);
-
-	if (!visinfo || nmatch < 1)
-		die("couldn't match a Visual with double buffering\n");
-	return visinfo;
+	return NULL;
 }
 
 /**
  * dc_init() - initialize DC.
- * @dc: DC.
+ * @dc: draw context.
+ * @xcb: xcb connection.
  * @scr: screen number.
  * @x: window position x.
  * @y: window position y.
@@ -420,60 +391,68 @@ get_visual_info(Display *dpy)
  * @height: window height.
  */
 void
-dc_init(DC dc, Display *dpy, int scr, int x, int y, int width, int height)
+dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
+        int y, int width, int height)
 {
-	XGCValues gcv = { 0 };
-	XSetWindowAttributes wattrs;
-	XClassHint *hint;
-	BarWindow *xw = &dc->xbar;
+	xcb_configure_window_value_list_t winconf = { 0 };
+	xcb_create_gc_value_list_t gcv = { 0 };
+	cairo_surface_t *surface;
+	window_t *xw = &dc->xbar;
 	int i = 0;
 
-	wattrs.background_pixel = bar.bg->xft.pixel;
-	wattrs.event_mask = NoEventMask;
+	const uint32_t attrs[] = { bar.bg->pixel, XCB_EVENT_MASK_NO_EVENT };
 
-	xw->win = XCreateWindow(dpy, RootWindow(dpy, scr), x, y, width, height, 0,
-	                        CopyFromParent, CopyFromParent, bar.vis,
-	                        CWBackPixel | CWEventMask, &wattrs);
-
-	/* set window type */
-	set_window_prop(dpy, xw->win, XA_ATOM, "_NET_WM_STATE", PropModeReplace,
-	                _net_wm_states, LENGTH(_net_wm_states));
-	set_window_prop(dpy, xw->win, XA_ATOM, "_NET_WM_WINDOW_TYPE",
-	                PropModeReplace, _net_wm_window_types,
-	                LENGTH(_net_wm_window_types));
-	long strut[] = { 0, 0, y + height, 0 };
-	set_window_prop(dpy, xw->win, XA_CARDINAL, "_NET_WM_STRUT", PropModeReplace,
-	                strut, 4);
-	long strut_partial[] = {
-		0, 0, y + height, 0,
-		0, 0, 0, 0,
-		x, x + width - 1, 0, 0,
-	};
-	set_window_prop(dpy, xw->win, XA_CARDINAL, "_NET_WM_STRUT_PARTIAL",
-	                PropModeReplace, strut_partial, 12);
-
-	/* create graphic context */
-	if (xdbe_support)
-		dc->buf = XdbeAllocateBackBufferName(dpy, xw->win, XdbeBackground);
-	else
-		dc->buf = xw->win;
-	gcv.graphics_exposures = 1;
-	dc->gc = XCreateGC(dpy, dc->buf, GCGraphicsExposures, &gcv);
-	dc->draw = XftDrawCreate(dpy, dc->buf, bar.vis, bar.cmap);
-	dc->swapinfo.swap_window = dc->xbar.win;
-	dc->swapinfo.swap_action = XdbeBackground;
-
-	/* set class hint */
-	hint = XAllocClassHint();
-	hint->res_class = "Bspwmbar";
-	hint->res_name = "Bspwmbar";
-	XSetClassHint(dpy, xw->win, hint);
-	XFree(hint);
-
+	xw->win = xcb_generate_id(xcb);
 	xw->x = x;
 	xw->y = y;
 	xw->width = width;
 	xw->height = height;
+	xcb_create_window(xcb, XCB_COPY_FROM_PARENT, xw->win, scr->root, x, y,
+	                  width, height, 0, XCB_COPY_FROM_PARENT,
+	                  XCB_COPY_FROM_PARENT,
+	                  XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, attrs);
+
+	/* set window state */
+	xcb_atom_t states[] = { ewmh._NET_WM_STATE_STICKY, ewmh._NET_WM_STATE_ABOVE };
+	xcb_ewmh_set_wm_state(&ewmh, xw->win, LENGTH(states), states);
+
+	/* set window type */
+	xcb_atom_t window_types[] = { ewmh._NET_WM_WINDOW_TYPE_DOCK };
+	xcb_ewmh_set_wm_window_type(&ewmh, xw->win, LENGTH(window_types), window_types);
+
+	/* set window strut */
+	xcb_ewmh_wm_strut_partial_t strut_partial = {
+		.left = 0,
+		.right = 0,
+		.top = y + height,
+		.bottom = 0,
+		.left_start_y = 0,
+		.left_end_y = 0,
+		.right_start_y = 0,
+		.right_end_y = 0,
+		.top_start_x = x,
+		.top_end_x = x + width - 1,
+		.bottom_start_x = 0,
+		.bottom_end_x = 0,
+	};
+	xcb_ewmh_set_wm_strut(&ewmh, xw->win, 0, 0, y + height, 0);
+	xcb_ewmh_set_wm_strut_partial(&ewmh, xw->win, strut_partial);
+
+	/* create graphic context */
+	dc->buf = xw->win;
+	dc->visual = xcb_visualtype_get(scr);
+
+	surface = cairo_xcb_surface_create(xcb, dc->buf, dc->visual, xw->width, xw->height);
+	dc->cr = cairo_create(surface);
+	cairo_surface_destroy(surface);
+
+	gcv.graphics_exposures = 1;
+	dc->gc = xcb_generate_id(xcb);
+	xcb_create_gc_aux(xcb, dc->gc, dc->buf, XCB_GC_GRAPHICS_EXPOSURES, &gcv);
+
+	/* set class hint */
+	xcb_change_property(xcb, XCB_PROP_MODE_REPLACE, xw->win, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 8, "bspwmbar");
+	xcb_change_property(xcb, XCB_PROP_MODE_REPLACE, xw->win, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, 17, "bspwmbar\0bspwmbar");
 
 	/* create labels from modules */
 	dc->nlabel = LENGTH(left_modules) + LENGTH(right_modules);
@@ -488,32 +467,32 @@ dc_init(DC dc, Display *dpy, int scr, int x, int y, int width, int height)
 	}
 
 	/* send window rendering request */
-	XLowerWindow(dpy, xw->win);
-	XMapWindow(dpy, xw->win);
+	winconf.stack_mode = XCB_STACK_MODE_BELOW;
+	xcb_configure_window_aux(xcb, xw->win, XCB_CONFIG_WINDOW_STACK_MODE, &winconf);
+	xcb_map_window(xcb, xw->win);
 }
 
 /**
  * dc_free() - free resources of DC.
- * dc: DC.
+ * dc: draw context.
  */
 void
-dc_free(DC dc)
+dc_free(draw_context_t dc)
 {
-	XFreeGC(bar.dpy, dc->gc);
-	XftDrawDestroy(dc->draw);
-	XDestroyWindow(bar.dpy, dc->xbar.win);
-	free(dc->xbar.monitor.desktops);
-	free(dc);
+	xcb_free_gc(bar.xcb, dc.gc);
+	xcb_destroy_window(bar.xcb, dc.xbar.win);
+	cairo_destroy(dc.cr);
+	free(dc.xbar.monitor.desktops);
 }
 
 /**
  * dc_get_x() - get next rendering position of DC.
- * @dc: DC.
+ * @dc: draw context.
  *
  * Return: int
  */
 int
-dc_get_x(DC dc)
+dc_get_x(draw_context_t *dc)
 {
 	if (dc->align == DA_LEFT)
 		return dc->left_x;
@@ -522,11 +501,11 @@ dc_get_x(DC dc)
 
 /**
  * dc_move_x() - move rendering position by x.
- * @dc: DC.
+ * @dc: draw context.
  * @x: distance of movement.
  */
 void
-dc_move_x(DC dc, int x)
+dc_move_x(draw_context_t *dc, int x)
 {
 	if (dc->align == DA_LEFT)
 		dc->left_x += x;
@@ -539,20 +518,15 @@ dc_move_x(DC dc, int x)
  * @dpy: display pointer.
  * @scr: screen number.
  *
- * Return: Window
+ * Return: xcb_window_t
  */
-Window
-get_active_window(Display *dpy, int scr)
+xcb_window_t
+get_active_window(uint8_t scrno)
 {
-	Window win = 0;
-	unsigned char *prop;
-	if (!(prop = get_window_prop(dpy, RootWindow(dpy, scr),
-	                             "_NET_ACTIVE_WINDOW")))
-		return 0;
-	if (strlen((const char *)prop))
-		win = prop[0] + (prop[1] << 8) + (prop[2] << 16) + (prop[3] << 24);
-	XFree(prop);
-	return win;
+	xcb_window_t win;
+	if (xcb_ewmh_get_active_window_reply(&ewmh, xcb_ewmh_get_active_window(&ewmh, scrno), &win, NULL))
+		return win;
+	return 0;
 }
 
 /**
@@ -563,15 +537,21 @@ get_active_window(Display *dpy, int scr)
  * Return: unsigned char *
  *         The return value needs free after used.
  */
-unsigned char *
-get_window_title(Display *dpy, Window win)
+char *
+get_window_title(xcb_connection_t *xcb, xcb_window_t win)
 {
-	unsigned char *title;
-	if ((title = get_window_prop(dpy, win, "_NET_WM_NAME")))
-		return title;
-	if ((title = get_window_prop(dpy, win, "WM_NAME")))
-		return title;
-	return NULL;
+	char *title = NULL;
+	xcb_get_property_reply_t *reply = NULL;
+	xcb_ewmh_get_utf8_strings_reply_t utf8_reply = { 0 };
+
+	if (xcb_ewmh_get_wm_name_reply(&ewmh, xcb_ewmh_get_wm_name(&ewmh, win), &utf8_reply, NULL)) {
+		title = strndup(utf8_reply.strings, utf8_reply.strings_len);
+		xcb_ewmh_get_utf8_strings_reply_wipe(&utf8_reply);
+	} else if ((reply = xcb_get_property_reply(xcb, xcb_get_property(xcb, 0, win, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 0, NAME_MAXSZ), NULL))) {
+		title = strndup(xcb_get_property_value(reply), xcb_get_property_value_length(reply));
+		free(reply);
+	}
+	return title;
 }
 
 /**
@@ -580,27 +560,27 @@ get_window_title(Display *dpy, Window win)
  * @scr: screen number.
  */
 void
-windowtitle_update(Display *dpy, int scr)
+windowtitle_update(xcb_connection_t *xcb, uint8_t scrno)
 {
-	Window win;
-	if ((win = get_active_window(dpy, scr))) {
+	xcb_window_t win;
+	if ((win = get_active_window(scrno))) {
 		if (wintitle)
-			XFree(wintitle);
-		wintitle = (char *)get_window_title(dpy, win);
+			free(wintitle);
+		wintitle = get_window_title(xcb, win);
 	} else {
 		/* release wintitle when active window not found */
-		XFree(wintitle);
+		free(wintitle);
 		wintitle = NULL;
 	}
 }
 
 /**
  * windowtitle() - active window title render function.
- * @dc: DC.
+ * @dc: draw context.
  * @opts: module options.
  */
 void
-windowtitle(DC dc, Option opts)
+windowtitle(draw_context_t *dc, module_option_t *opts)
 {
 	if (!wintitle)
 		return;
@@ -620,64 +600,89 @@ windowtitle(DC dc, Option opts)
  * get_font() - finds a font that renderable specified rune.
  * @rune: FcChar32
  *
- * Return: XftFont *
+ * Return: FT_Face
  */
-XftFont *
-get_font(FcChar32 rune)
+FT_UInt
+get_font(FcChar32 rune, font_t **font)
 {
 	FcResult result;
-	FcPattern *pat, *match;
+	FcFontSet *fonts;
+	FcPattern *pat;
 	FcCharSet *charset;
-	FcFontSet *fsets[] = { NULL };
+	FcChar8 *path;
+	FT_Face face;
 	int i, idx;
 
 	/* Lookup character index with default font. */
-	idx = XftCharIndex(bar.dpy, bar.font.base, rune);
-	if (idx)
-		return bar.font.base;
+	if ((idx = FT_Get_Char_Index(bar.font.face, rune))) {
+		*font = &bar.font;
+		return idx;
+	}
 
 	/* fallback on font cache */
 	for (i = 0; i < nfcache; i++) {
-		if ((idx = XftCharIndex(bar.dpy, fcaches[i], rune)))
-			return fcaches[i];
+		if ((idx = FT_Get_Char_Index(fcaches[i].face, rune))) {
+			*font = &fcaches[i];
+			return idx;
+		}
 	}
 
 	/* find font when not found */
 	if (i >= nfcache) {
-		if (!bar.font.set)
-			bar.font.set = FcFontSort(0, bar.font.pattern, 1, 0, &result);
-		fsets[0] = bar.font.set;
-
 		if (nfcache >= fcachecap) {
 			fcachecap += 8;
-			fcaches = realloc(fcaches, fcachecap * sizeof(XftFont *));
+			fcaches = realloc(fcaches, fcachecap * sizeof(font_t));
 		}
 
-		pat = FcPatternDuplicate(bar.font.pattern);
+		pat = FcPatternDuplicate(bar.pattern);
 		charset = FcCharSetCreate();
 
 		/* find font that contains rune and scalable */
 		FcCharSetAddChar(charset, rune);
 		FcPatternAddCharSet(pat, FC_CHARSET, charset);
 		FcPatternAddBool(pat, FC_SCALABLE, 1);
+		FcPatternAddBool(pat, FC_COLOR, 1);
 
 		FcConfigSubstitute(NULL, pat, FcMatchPattern);
-		XftDefaultSubstitute(bar.dpy, bar.scr, pat);
+		FcDefaultSubstitute(pat);
 
-		match = FcFontSetMatch(NULL, fsets, 1, pat, &result);
+		fonts = FcFontSort(NULL, pat, 1, NULL, &result);
 		FcPatternDestroy(pat);
 		FcCharSetDestroy(charset);
-		if (!match)
+		if (!fonts)
 			die("no fonts contain glyph: 0x%x\n", rune);
 
-		fcaches[nfcache] = XftFontOpenPattern(bar.dpy, match);
-		if (!fcaches[nfcache])
-			die("XftFontOpenPattern(): failed seeking fallback font\n");
+		/* Allocate memory for the new cache entry. */
+		if (nfcache >= fcachecap) {
+			fcachecap += 16;
+			fcaches = realloc(fcaches, fcachecap * sizeof(font_t));
+		}
+
+		/* veirfy matched font */
+		for (i = 0; i < fonts->nfont; i++) {
+			pat = fonts->fonts[i];
+			FcPatternGetString(pat, FC_FILE, 0, &path);
+			if (FT_New_Face(ftlib, (const char *)path, 0, &face))
+				die("FT_New_Face failed seeking fallback font: %s\n", path);
+			if ((idx = FT_Get_Char_Index(face, rune))) {
+				break;
+			}
+			FT_Done_Face(face);
+			face = NULL;
+		}
+		FcFontSetDestroy(fonts);
+		if (!face)
+			return 0;
+
+		fcaches[nfcache].face = face;
+		fcaches[nfcache].cairo = cairo_ft_font_face_create_for_ft_face(fcaches[nfcache].face, load_flag);
+		fcaches[nfcache].hb = hb_ft_font_create(face, NULL);
 
 		i = nfcache++;
 	}
+	*font = &fcaches[i];
 
-	return fcaches[i];
+	return idx;
 }
 
 /**
@@ -688,33 +693,61 @@ get_font(FcChar32 rune)
  * 0 - success
  * 1 - failure
  */
-int
+bool
 load_fonts(const char *patstr)
 {
+	double dpi;
+	FcChar8 *path;
 	FcPattern *pat = FcNameParse((FcChar8 *)patstr);
+
 	if (!pat)
 		die("loadfonts(): failed parse pattern: %s\n", patstr);
 
+	/* get dpi and set to pattern */
+	dpi = (((double)bar.scr->height_in_pixels * 25.4) / (double)bar.scr->height_in_millimeters);
+	FcPatternAddDouble(pat, FC_DPI, dpi);
+	FcPatternAddBool(pat, FC_SCALABLE, 1);
+
 	FcConfigSubstitute(NULL, pat, FcMatchPattern);
-	XftDefaultSubstitute(bar.dpy, bar.scr, pat);
+	FcDefaultSubstitute(pat);
 
 	FcResult result;
 	FcPattern *match = FcFontMatch(NULL, pat, &result);
 	if (!match) {
 		FcPatternDestroy(pat);
 		err("loadfonts(): no fonts match pattern: %s\n", patstr);
-		return 1;
+		return false;
 	}
 
-	bar.font.base = XftFontOpenPattern(bar.dpy, match);
-	if (!bar.font.base) {
+	FcPatternGetString(match, FC_FILE, 0, &path);
+	if (FT_New_Face(ftlib, (const char *)path, 0, &bar.font.face))
+		die("FT_New_Face failed seeking fallback font: %s\n", path);
+	FcPatternGetDouble(match, FC_PIXEL_SIZE, 0, &bar.font_size);
+	FcPatternDestroy(match);
+
+	if (!bar.font.face) {
 		FcPatternDestroy(pat);
 		err("loadfonts(): failed open font: %s\n", patstr);
-		return 1;
+		return false;
 	}
 
-	bar.font.pattern = pat;
-	return 0;
+	bar.font.cairo = cairo_ft_font_face_create_for_ft_face(bar.font.face, load_flag);
+	bar.font.hb = hb_ft_font_create(bar.font.face, NULL);
+	bar.pattern = pat;
+
+	bar.font_opt = cairo_font_options_create();
+	cairo_font_options_set_antialias(bar.font_opt, CAIRO_ANTIALIAS_SUBPIXEL);
+	cairo_font_options_set_subpixel_order(bar.font_opt, CAIRO_SUBPIXEL_ORDER_RGB);
+	cairo_font_options_set_hint_style(bar.font_opt, CAIRO_HINT_STYLE_SLIGHT);
+	cairo_font_options_set_hint_metrics(bar.font_opt, CAIRO_HINT_METRICS_ON);
+
+	/* padding width */
+	celwidth = bar.font_size / 2 - 1;
+
+	graph_maxh = bar.font_size - (int)bar.font_size % 2;
+	graph_basey = (BAR_HEIGHT - graph_maxh) / 2;
+
+	return true;
 }
 
 /**
@@ -725,7 +758,7 @@ load_fonts(const char *patstr)
 int
 get_baseline()
 {
-	return (BAR_HEIGHT - bar.font.base->height) / 2 + bar.font.base->ascent;
+	return (BAR_HEIGHT - bar.font_size / 2);
 }
 
 /**
@@ -735,16 +768,60 @@ get_baseline()
  * @nglyph: lenght of glyphs.
  */
 void
-dc_calc_render_pos(DC dc, XftCharFontSpec *glyphs, int nglyph)
+dc_calc_render_pos(draw_context_t *dc, glyph_font_spec_t *glyphs, int nglyph)
 {
 	int x = dc_get_x(dc);
 	for (int i = 0; i < nglyph; i++) {
-		glyphs[i].x += x;
+		glyphs[i].glyph.x += x;
 	}
 }
 
 /**
+ * load_glyphs_from_hb_buffer() - load glyphs from hb_buffer_t.
+ * @dc: draw context.
+ * @buffer: harfbuzz buffer.
+ * @font: a font for rendering.
+ * @x: (out) base x position.
+ * @y: base y position.
+ * @glyphs: (out) loaded glyphs.
+ * @len: max length of glyphs.
+ *
+ * Return: size_t
+ *   num of loaded glyphs.
+ */
+size_t
+load_glyphs_from_hb_buffer(draw_context_t *dc, hb_buffer_t *buffer, font_t *font, int *x, int y, glyph_font_spec_t *glyphs, size_t len)
+{
+	cairo_text_extents_t extents;
+	hb_glyph_info_t *infos;
+	hb_glyph_position_t *pos;
+	uint32_t i = 0, ninfo = 0, npos = 0;
+
+	cairo_set_font_face(dc->cr, font->cairo);
+	hb_buffer_guess_segment_properties(buffer);
+	hb_shape(font->hb, buffer, NULL, 0);
+	infos = hb_buffer_get_glyph_infos(buffer, &ninfo);
+	pos = hb_buffer_get_glyph_positions(buffer, &npos);
+
+	for (i = 0; i < ninfo && i < len; i++) {
+		glyphs[i].font = font;
+		glyphs[i].glyph.index = infos[i].codepoint;
+		glyphs[i].glyph.x = *x;
+		glyphs[i].glyph.y = y;
+
+		if (pos[i].x_advance) {
+			*x += pos[i].x_advance / 64;
+		} else {
+			cairo_glyph_extents(dc->cr, &glyphs[i].glyph, 1, &extents);
+			*x += extents.x_advance;
+		}
+	}
+	return i;
+}
+
+/**
  * load_glyphs() - load XGlyphFontSpec from specified str.
+ * @dc: draw context.
  * @str: utf-8 string.
  * @glyphs: (out) XCharFontSpec *.
  * @nglyph: length of glyphs.
@@ -753,27 +830,33 @@ dc_calc_render_pos(DC dc, XftCharFontSpec *glyphs, int nglyph)
  * Return: number of loaded glyphs.
  */
 int
-load_glyphs(const char *str, XftCharFontSpec *glyphs, int nglyph, int *width)
+load_glyphs(draw_context_t *dc, const char *str, glyph_font_spec_t *glyphs, int nglyph, int *width)
 {
-	XGlyphInfo extents = { 0 };
 	FcChar32 rune = 0;
-	int i, len = 0;
-	size_t offset = 0;
-	int y = get_baseline();
+	int i, y, len = 0;
+	size_t offset = 0, num = 0;
+	font_t *font = NULL, *prev = NULL;
+	hb_buffer_t *buffer = NULL;
 
+	buffer = hb_buffer_create();
+
+	y = get_baseline();
 	*width = 0;
 	for (i = 0; offset < strlen(str) && i < nglyph; i++, offset += len) {
-		len = FcUtf8ToUcs4((FcChar8 *)&str[offset], &rune, strlen(str) - i);
-		glyphs[i].font = get_font(rune);
-		glyphs[i].ucs4 = rune;
-		glyphs[i].x = *width;
-		glyphs[i].y = y;
-		XftTextExtentsUtf8(bar.dpy, glyphs[i].font, (FcChar8 *)&str[offset],
-		                   len, &extents);
-		*width += extents.x + extents.xOff;
+		len = FcUtf8ToUcs4((FcChar8 *)&str[offset], &rune, strlen(str) - offset);
+		if (get_font(rune, &font) && prev && prev != font) {
+			num += load_glyphs_from_hb_buffer(dc, buffer, prev, width, y, &glyphs[num], nglyph - num);
+			hb_buffer_clear_contents(buffer);
+		}
+		prev = font;
+		hb_buffer_add_codepoints(buffer, &rune, 1, 0, 1);
 	}
+	if (prev && hb_buffer_get_length(buffer))
+		num += load_glyphs_from_hb_buffer(dc, buffer, font, width, y, &glyphs[num], nglyph - num);
 
-	return i;
+	hb_buffer_destroy(buffer);
+
+	return num;
 }
 
 /**
@@ -782,7 +865,7 @@ load_glyphs(const char *str, XftCharFontSpec *glyphs, int nglyph, int *width)
  * @num: padding width.
  */
 void
-draw_padding(DC dc, int num)
+draw_padding(draw_context_t *dc, int num)
 {
 	switch ((int)dc->align) {
 	case DA_LEFT:
@@ -803,25 +886,50 @@ draw_padding(DC dc, int num)
  * @str: rendering text.
  */
 void
-draw_string(DC dc, Color color, const char *str)
+draw_string(draw_context_t *dc, color_t *color, const char *str)
 {
 	int width;
-	int nglyph = load_glyphs(str, glyph_caches, sizeof(glyph_caches), &width);
+	size_t nglyph = load_glyphs(dc, str, glyph_caches, sizeof(glyph_caches), &width);
 	if (dc->align == DA_RIGHT)
 		dc_move_x(dc, width);
 	dc_calc_render_pos(dc, glyph_caches, nglyph);
-	XftDrawCharFontSpec(dc->draw, &color->xft, glyph_caches, nglyph);
+	draw_glyphs(dc, color, glyph_caches, nglyph);
 	if (dc->align == DA_LEFT)
 		dc_move_x(dc, width);
 }
 
 /**
+ * draw_glyphs() - draw text use loaded glyphs.
+ * @dc: draw context.
+ * @color: foreground color.
+ * @specs: loaded glyphs.
+ * @len: max length of specs.
+ */
+void
+draw_glyphs(draw_context_t *dc, color_t *color, const glyph_font_spec_t *specs, int len)
+{
+	cairo_font_face_t *prev = NULL;
+	int i;
+
+	cairo_set_font_options(dc->cr, bar.font_opt);
+	cairo_set_font_size(dc->cr, bar.font_size);
+	cairo_set_source_rgb(dc->cr, CONVCOL(color->red), CONVCOL(color->green), CONVCOL(color->blue));
+	for (i = 0; i < len; i++) {
+		if (prev != specs[i].font->cairo) {
+			prev = specs[i].font->cairo;
+			cairo_set_font_face(dc->cr, prev);
+		}
+		cairo_show_glyphs(dc->cr, (cairo_glyph_t *)&specs[i].glyph, 1);
+	}
+}
+
+/**
  * draw_text() - render text.
- * @dc: DC.
+ * @dc: draw context.
  * @str: rendering text.
  */
 void
-draw_text(DC dc, const char *str)
+draw_text(draw_context_t *dc, const char *str)
 {
 	draw_padding(dc, celwidth);
 	draw_string(dc, bar.fg, str);
@@ -830,16 +938,15 @@ draw_text(DC dc, const char *str)
 
 /**
  * draw_bargraph() - render bar graph.
- * @dc: DC.
+ * @dc: draw context.
  * @label: label of the graph.
  * @items: items of the Graph.
  * @nitem: number of items.
  */
 void
-draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
+draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int nitem)
 {
-	int maxh = bar.font.base->ascent;
-	int basey = (BAR_HEIGHT - bar.font.base->ascent) / 2;
+	xcb_rectangle_t rect = { 0 };
 
 	draw_padding(dc, celwidth);
 	int width = (celwidth + 1) * nitem;
@@ -849,17 +956,22 @@ draw_bargraph(DC dc, const char *label, GraphItem *items, int nitem)
 	draw_string(dc, bar.fg, label);
 	draw_padding(dc, celwidth);
 	for (int i = 0; i < nitem; i++) {
-		XSetForeground(bar.dpy, dc->gc, items[i].bg->xft.pixel);
-		XFillRectangle(bar.dpy, dc->buf, dc->gc, x - celwidth,
-		               basey, celwidth, maxh);
+		xcb_gc_color(bar.xcb, dc->gc, items[i].bg);
+		rect.x = x - celwidth;
+		rect.y = graph_basey;
+		rect.width = celwidth;
+		rect.height = graph_maxh;
+		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
 
 		if (items[i].val < 0)
 			goto CONTINUE;
 
-		int height = SMALLER(BIGGER(maxh * items[i].val, 1), maxh);
-		XSetForeground(bar.dpy, dc->gc, items[i].fg->xft.pixel);
-		XFillRectangle(bar.dpy, dc->buf, dc->gc, x - celwidth,
-		               basey + (maxh - height), celwidth, height);
+		xcb_gc_color(bar.xcb, dc->gc, items[i].fg);
+		rect.width = celwidth;
+		rect.height = SMALLER(BIGGER(graph_maxh * items[i].val, 1), graph_maxh);;
+		rect.x = x - celwidth;
+		rect.y = graph_basey + (graph_maxh - rect.height);
+		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
 	CONTINUE:
 		x += celwidth + 1;
 	}
@@ -877,7 +989,7 @@ bspwm_parse(char *report)
 	int i, j, name_len, nws = 0;
 	int len = strlen(report);
 	char tok, name[NAME_MAXSZ];
-	Monitor *curmon = NULL;
+	monitor_t *curmon = NULL;
 
 	for (i = 0; i < len; i++) {
 		switch (tok = report[i]) {
@@ -892,8 +1004,8 @@ bspwm_parse(char *report)
 			name[name_len] = '\0';
 			i = j;
 			for (j = 0; j < bar.ndc; j++)
-				if (!strncmp(bar.dcs[j]->xbar.monitor.name, name, strlen(name)))
-					curmon = &bar.dcs[j]->xbar.monitor;
+				if (!strncmp(bar.dcs[j].xbar.monitor.name, name, strlen(name)))
+					curmon = &bar.dcs[j].xbar.monitor;
 			if (curmon)
 				curmon->is_active = (tok == 'M') ? 1 : 0;
 			break;
@@ -908,8 +1020,7 @@ bspwm_parse(char *report)
 					break;
 			if (nws + 1 >= curmon->cdesktop) {
 				curmon->cdesktop += 5;
-				curmon->desktops = realloc(curmon->desktops,
-				                           sizeof(Desktop) * curmon->cdesktop);
+				curmon->desktops = realloc(curmon->desktops, sizeof(desktop_t) * curmon->cdesktop);
 			}
 			curmon->desktops[nws++].state = bspwm_desktop_state(tok);
 			i = j;
@@ -931,13 +1042,13 @@ bspwm_parse(char *report)
 
 /**
  * text() - render the specified text.
- * @dc: DC
+ * @dc: draw context.
  * @opts: module options.
  */
 void
-text(DC dc, Option opts)
+text(draw_context_t *dc, module_option_t *opts)
 {
-	Color fg = bar.fg;
+	color_t *fg = bar.fg;
 	if (opts->text.fg)
 		fg = color_load(opts->text.fg);
 	draw_padding(dc, celwidth);
@@ -950,7 +1061,7 @@ text(DC dc, Option opts)
  * @dc: DC.
  */
 void
-render_label(DC dc)
+render_label(draw_context_t *dc)
 {
 	int x = 0, width = 0;
 	for (int j = 0; j < dc->nlabel; j++) {
@@ -971,73 +1082,54 @@ render_label(DC dc)
 }
 
 /**
+ * xcb_gc_color() - set foreground color to xcb_gcontext_t
+ * @xcb: xcb connection.
+ * @gc: xcb_gcontext_t
+ * @color: foreground color.
+ */
+void
+xcb_gc_color(xcb_connection_t *xcb, xcb_gcontext_t gc, color_t *color)
+{
+	uint32_t values[] = { color->pixel, 0 };
+	xcb_change_gc(xcb, gc, XCB_GC_FOREGROUND, values);
+}
+
+/**
  * render() - rendering all modules.
  */
 void
 render()
 {
-	XGlyphInfo extents = { 0 };
-
-	/* padding width */
-	if (!celwidth) {
-		XftTextExtentsUtf8(bar.dpy, bar.font.base, (FcChar8 *)" ", strlen(" "),
-		                   &extents);
-		celwidth = extents.x + extents.xOff;
-	}
+	draw_context_t *dc;
+	window_t *xw;
+	xcb_rectangle_t rect = { 0 };
 
 	for (int i = 0; i < bar.ndc; i++) {
-		DC dc = bar.dcs[i];
-		BarWindow *xw = &bar.dcs[i]->xbar;
+		dc = &bar.dcs[i];
 		dc->align = DA_LEFT;
 		dc->left_x = 0;
 		dc->right_x = 0;
+		xw = &dc->xbar;
+		rect.width = xw->width;
+		rect.height = xw->height;
 
-		XClearWindow(bar.dpy, xw->win);
+		xcb_gc_color(bar.xcb, dc->gc, bar.bg);
+		xcb_poly_fill_rectangle(bar.xcb, xw->win, dc->gc, 1, &rect);
 
 		/* render modules */
 		draw_padding(dc, celwidth);
 		render_label(dc);
-
-		/* swap buffer */
-		if (xdbe_support)
-			XdbeSwapBuffers(bar.dpy, &dc->swapinfo, 1);
 	}
-	XFlush(bar.dpy);
-}
-
-/**
- * parse_display() - parse DISPLAY environment variable string.
- * @name: display name format string.
- * @host: (out) host name. Memory for the new string is obtained with malloc(3),
- *              and must be freed with free().
- * @dpy: (out) display server number.
- * @scr: (out) screen number.
- */
-int
-parse_display(char *name, char **host, int *dpy, int *scr)
-{
-	char *colon;
-	int hostlen = 0;
-	*host = NULL; *dpy = 0; *scr = 0;
-	if (!(colon = strrchr(name, ':')))
-		return 1;
-	hostlen = (colon - name);
-	if (hostlen < 0)
-		return 1;
-	++colon;
-	*host = strndup(name, hostlen);
-	sscanf(colon, "%d.%d", dpy, scr);
-	return 0;
+	xcb_flush(bar.xcb);
 }
 
 /**
  * bspwm_connect() - connect to bspwm socket.
- * @dpy: Display pointer.
  *
  * Return: file descripter or -1.
  */
 int
-bspwm_connect(Display *dpy)
+bspwm_connect()
 {
 	struct sockaddr_un sock;
 	int fd, dpyno = 0, scrno = 0;
@@ -1051,10 +1143,9 @@ bspwm_connect(Display *dpy)
 	if (sp) {
 		snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", sp);
 	} else {
-		if (parse_display(DisplayString(dpy), &sp, &dpyno, &scrno))
-			return -1;
-		snprintf(sock.sun_path, sizeof(sock.sun_path),
-		         "/tmp/bspwm%s_%i_%i-socket", sp, dpyno, scrno);
+		if (xcb_parse_display(NULL, &sp, &dpyno, &scrno))
+			snprintf(sock.sun_path, sizeof(sock.sun_path),
+			         "/tmp/bspwm%s_%i_%i-socket", sp, dpyno, scrno);
 		free(sp);
 	}
 
@@ -1074,63 +1165,82 @@ bspwm_connect(Display *dpy)
  * 1 - failure
  */
 int
-bspwmbar_init(Display *dpy, int scr)
+bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 {
-	XRRScreenResources *xrr_res;
-	XRRMonitorInfo *xrr_mon;
-	XRROutputInfo *xrr_out;
-	Window root = RootWindow(dpy, scr);
-	int i, j, nmon;
+	xcb_randr_get_monitors_reply_t *mon_reply;
+	xcb_randr_get_screen_resources_reply_t *screen_reply;
+	xcb_randr_get_output_info_reply_t *info_reply;
+	xcb_randr_output_t *outputs;
+	xcb_randr_get_crtc_info_reply_t *crtc_reply;
+	int i, nmon = 0;
 
 	/* connect bspwm socket */
-	if ((bar.fd = bspwm_connect(dpy)) == -1) {
+	if ((bar.fd = bspwm_connect()) == -1) {
 		err("bspwm_connect(): Failed to connect to the socket\n");
 		return 1;
 	}
 
 	/* initialize */
-	bar.dpy = dpy;
+	bar.xcb = xcb;
 	bar.scr = scr;
-	if (xdbe_support)
-		bar.vis = get_visual_info(dpy)->visual;
-	else
-		bar.vis = DefaultVisual(dpy, DefaultScreen(dpy));
-	bar.cmap = DefaultColormap(dpy, scr);
+	bar.cmap = scr->default_colormap;
 	bar.fg = color_load(FGCOLOR);
 	bar.bg = color_load(BGCOLOR);
 
 	/* get monitors */
-	xrr_mon = XRRGetMonitors(dpy, root, 1, &nmon);
-	bar.dcs = (DC *)calloc(nmon, sizeof(DC));
-	for (i = 0; i < nmon; i++)
-		bar.dcs[i] = (DC)calloc(1, sizeof(struct _DC));
-	bar.ndc = nmon;
+	mon_reply = xcb_randr_get_monitors_reply(xcb, xcb_randr_get_monitors(xcb, scr->root, 1), NULL);
+	bar.dcs = (draw_context_t *)calloc(mon_reply->nMonitors, sizeof(draw_context_t));
+	bar.ndc = mon_reply->nMonitors;
 
 	/* create window per monitor */
-	xrr_res = XRRGetScreenResources(dpy, root);
-	for (i = 0; i < xrr_res->noutput; i++) {
-		xrr_out = XRRGetOutputInfo(dpy, xrr_res, xrr_res->outputs[i]);
-		if (xrr_out->connection == RR_Connected) {
-			for (j = 0; j < nmon; j++) {
-				if (xrr_res->outputs[i] != xrr_mon[j].outputs[0])
-					continue;
-				dc_init(bar.dcs[j], dpy, scr, xrr_mon[j].x, xrr_mon[j].y,
-				             xrr_mon[j].width, BAR_HEIGHT);
-				strncpy(bar.dcs[j]->xbar.monitor.name, xrr_out->name,
-				        NAME_MAXSZ);
-			}
+	screen_reply = xcb_randr_get_screen_resources_reply(xcb, xcb_randr_get_screen_resources(xcb, scr->root), NULL);
+	outputs = xcb_randr_get_screen_resources_outputs(screen_reply);
+	for (i = 0; i < screen_reply->num_outputs; i++) {
+		info_reply = xcb_randr_get_output_info_reply(xcb, xcb_randr_get_output_info(xcb, outputs[i], XCB_TIME_CURRENT_TIME), NULL);
+		if (info_reply->crtc != XCB_NONE) {
+			crtc_reply = xcb_randr_get_crtc_info_reply(xcb, xcb_randr_get_crtc_info(xcb, info_reply->crtc, XCB_TIME_CURRENT_TIME), NULL);
+			dc_init(&bar.dcs[nmon], xcb, scr, crtc_reply->x, crtc_reply->y, crtc_reply->width, BAR_HEIGHT);
+			strncpy(bar.dcs[nmon++].xbar.monitor.name, (const char *)xcb_randr_get_output_info_name(info_reply), NAME_MAXSZ);
+			free(crtc_reply);
 		}
-		XRRFreeOutputInfo(xrr_out);
+		free(info_reply);
 	}
-	XRRFreeScreenResources(xrr_res);
-	XRRFreeMonitors(xrr_mon);
+	free(screen_reply);
+	free(mon_reply);
 
 	/* load_fonts */
-	if (load_fonts(fontname))
+	if (!load_fonts(fontname))
 		return 1;
 
-	XFlush(dpy);
+	xcb_flush(xcb);
 	return 0;
+}
+
+/**
+ * font_destroy() - free all resources of font.
+ * @font: font_t
+ */
+void
+font_destroy(font_t font)
+{
+	cairo_font_face_destroy(font.cairo);
+	hb_font_destroy(font.hb);
+	FT_Done_Face(font.face);
+}
+
+/**
+ * font_caches_destroy() - free all resources of font caches.
+ */
+void
+font_caches_destroy()
+{
+	int i;
+	for (i = 0; i < nfcache; i++)
+		font_destroy(fcaches[i]);
+	nfcache = 0;
+	fcachecap = 0;
+	if (fcaches)
+		free(fcaches);
 }
 
 /**
@@ -1144,29 +1254,22 @@ bspwmbar_destroy()
 	list_head *pos;
 
 	list_for_each(&pollfds, cur)
-		poll_del(list_entry(cur, PollFD, head));
+		poll_del(list_entry(cur, poll_fd_t, head));
 
 	/* font resources */
-	for (i = 0; i < nfcache; i++)
-		XftFontClose(bar.dpy, fcaches[i]);
-	if (fcaches)
-		free(fcaches);
-	if (bar.font.set)
-		FcFontSetDestroy(bar.font.set);
-	XftFontClose(bar.dpy, bar.font.base);
-	FcPatternDestroy(bar.font.pattern);
+	cairo_font_options_destroy(bar.font_opt);
+	font_destroy(bar.font);
+	font_caches_destroy();
+	FcPatternDestroy(bar.pattern);
 
 	/* deinit modules */
 	list_for_each(&pollfds, pos)
-		poll_del(list_entry(pos, PollFD, head));
+		poll_del(list_entry(pos, poll_fd_t, head));
 
 	/* rendering resources */
-	for (i = 0; i < bar.ndc; i++) {
+	for (i = 0; i < bar.ndc; i++)
 		dc_free(bar.dcs[i]);
-	}
 	free(bar.dcs);
-	if (xdbe_support)
-		XFree(visinfo);
 }
 
 /**
@@ -1184,14 +1287,14 @@ bspwm_send(char *cmd, int len)
 
 /**
  * desktops() - render bspwm desktop states.
- * @dc: DC.
+ * @dc: draw context.
  * @opts: module options.
  */
 void
-desktops(DC dc, Option opts)
+desktops(draw_context_t *dc, module_option_t *opts)
 {
-	static Color fg = NULL, altfg = NULL;
-	Color col;
+	static color_t *fg = NULL, *altfg = NULL;
+	color_t *col;
 	const char *ws;
 	int cur, max = dc->xbar.monitor.ndesktop;
 
@@ -1204,9 +1307,7 @@ desktops(DC dc, Option opts)
 	for (int i = 0, j = max - 1; i < max; i++, j--) {
 		cur = (dc->align == DA_RIGHT) ? j : i;
 		draw_padding(dc, celwidth / 2.0 + 0.5);
-		ws = (dc->xbar.monitor.desktops[cur].state & STATE_ACTIVE)
-		     ? opts->desk.active
-		     : opts->desk.inactive;
+		ws = (dc->xbar.monitor.desktops[cur].state & STATE_ACTIVE) ? opts->desk.active : opts->desk.inactive;
 		col = (dc->xbar.monitor.desktops[cur].state == STATE_FREE) ? altfg : fg;
 		draw_string(dc, col, ws);
 		draw_padding(dc, celwidth / 2.0 + 0.5);
@@ -1220,10 +1321,12 @@ desktops(DC dc, Option opts)
  * @opts: dummy.
  */
 void
-systray(DC dc, Option opts)
+systray(draw_context_t *dc, module_option_t *opts)
 {
 	list_head *pos;
 	int x;
+	xcb_configure_window_value_list_t values;
+	uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
 	(void)opts;
 
 	if (!systray_icon_size(tray))
@@ -1237,24 +1340,23 @@ systray(DC dc, Option opts)
 
 	draw_padding(dc, celwidth);
 
-	xerror_begin();
 	list_for_each(systray_get_items(tray), pos) {
-		TrayItem *item = list_entry(pos, TrayItem, head);
+		systray_item_t *item = list_entry(pos, systray_item_t, head);
 		if (!item->info.flags)
 			continue;
 		draw_padding(dc, opts->tray.iconsize);
 		x = dc_get_x(dc);
 		if (item->x != x) {
-			XMoveResizeWindow(bar.dpy, item->win, x,
-			                  (BAR_HEIGHT - opts->tray.iconsize) / 2,
-			                  opts->tray.iconsize, opts->tray.iconsize);
-			if (!xerror_catch(bar.dpy))
+			values.x = x;
+			values.y = (BAR_HEIGHT - opts->tray.iconsize) / 2;
+			values.width = opts->tray.iconsize;
+			values.height = opts->tray.iconsize;
+			if (!xcb_request_check(bar.xcb, xcb_configure_window_aux(bar.xcb, item->win, mask, &values)))
 				item->x = x;
 		}
 		draw_padding(dc, celwidth);
 	}
 	draw_padding(dc, celwidth);
-	xerror_end();
 }
 
 /**
@@ -1268,45 +1370,11 @@ poll_stop()
 }
 
 /**
- * error_handler() - X11 error handler.
- * @dpy: display pointer.
- * @err: XErrorEvent.
- *
- * Return: always 0.
- */
-int
-error_handler(Display *dpy, XErrorEvent *err)
-{
-	switch (err->type) {
-	case Success:
-	case BadWindow:
-		switch (err->request_code) {
-		case X_ChangeWindowAttributes:
-		case X_GetProperty:
-			return 0;
-		}
-		break;
-	default:
-		err("Unknown Error Code: %d\n", err->type);
-	}
-	XGetErrorText(dpy, err->error_code, buf, sizeof(buf) - 1);
-	err("XError: %s\n", buf);
-	XGetErrorText(dpy, err->request_code, buf, sizeof(buf) - 1);
-	err("  MajorCode: %d (%s)\n", err->request_code, buf);
-	err("  ResourceID: %ld\n", err->resourceid);
-	err("  SerialNumer: %ld\n", err->serial);
-
-	poll_stop();
-
-	return 0;
-}
-
-/**
  * poll_add() - add the file descriptor to polling targets.
  * @pollfd: PollFD object.
  */
 void
-poll_add(PollFD *pollfd)
+poll_add(poll_fd_t *pollfd)
 {
 	(void)pollfd;
 #if defined(__linux)
@@ -1334,7 +1402,7 @@ poll_add(PollFD *pollfd)
  * @pollfd: PollFD object.
  */
 void
-poll_del(PollFD *pollfd)
+poll_del(poll_fd_t *pollfd)
 {
 	if (pollfd->deinit)
 		pollfd->deinit();
@@ -1370,7 +1438,7 @@ poll_init()
  *
  * always - PR_UPDATE
  */
-PollResult
+poll_result_t
 timer_reset(int fd)
 {
 	uint64_t tcnt;
@@ -1392,13 +1460,15 @@ timer_reset(int fd)
  * success and need rerendering     - PR_UPDATE
  * failed to read from fd           - PR_FAILED
  */
-PollResult
+poll_result_t
 bspwm_handle(int fd)
 {
 	size_t len;
-	Window win;
-	XSetWindowAttributes attrs;
-	attrs.event_mask = PropertyChangeMask;
+	xcb_window_t win;
+	xcb_change_window_attributes_value_list_t attrs;
+	uint32_t mask = XCB_CW_EVENT_MASK;
+
+	attrs.event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
 
 	if ((len = recv(fd, buf, sizeof(buf) - 1, 0)) > 0) {
 		buf[len] = '\0';
@@ -1407,9 +1477,8 @@ bspwm_handle(int fd)
 			return PR_FAILED;
 		}
 		bspwm_parse(buf);
-		if ((win = get_active_window(bar.dpy, bar.scr)))
-			XChangeWindowAttributes(bar.dpy, win, CWEventMask,
-			                        &attrs);
+		if ((win = get_active_window(0)))
+			xcb_change_window_attributes_aux(bar.xcb, win, mask, &attrs);
 		return PR_UPDATE;
 	}
 	return PR_NOOP;
@@ -1418,86 +1487,86 @@ bspwm_handle(int fd)
 /**
  * is_change_active_window_event() - check the event is change active window.
  *
- * ev: XEvent
+ * ev: xcb_generic_event_t
  *
- * Return: int
- * 0 - false
- * 1 - true
+ * Return: bool
  */
-int
-is_change_active_window_event(XEvent ev)
+bool
+is_change_active_window_event(xcb_property_notify_event_t *ev)
 {
-	Window win = RootWindow(bar.dpy, bar.scr);
-	Atom atom = XInternAtom(bar.dpy, "_NET_ACTIVE_WINDOW", 1);
-	return (ev.xproperty.window == win) && (ev.xproperty.atom == atom);
+	return (ev->window == bar.scr->root) && (ev->atom == ewmh._NET_ACTIVE_WINDOW);
 }
 
 /**
  * xev_handle() - X11 event handling
  *
- * Return: PollResult
+ * Return: poll_result_t
  * PR_NOOP   - success and not need more action
  * PR_UPDATE - success and need rerendering
  */
-PollResult
+poll_result_t
 xev_handle()
 {
-	XEvent event;
-	PollResult res = PR_NOOP;
-	DC dc;
+	xcb_generic_event_t *event;
+	xcb_button_press_event_t *button;
+	xcb_property_notify_event_t *prop;
+	xcb_window_t win;
+	poll_result_t res = PR_NOOP;
+	draw_context_t *dc;
 
 	/* for X11 events */
-	while (XPending(bar.dpy)) {
-		XNextEvent(bar.dpy, &event);
-		switch (event.type) {
-		case SelectionClear:
+	while ((event = xcb_poll_for_event(bar.xcb))) {
+		switch (event->response_type & ~0x80) {
+		case XCB_SELECTION_CLEAR:
 			systray_handle(tray, event);
 			break;
-		case Expose:
+		case XCB_EXPOSE:
 			res = PR_UPDATE;
 			break;
-		case ButtonPress:
+		case XCB_BUTTON_PRESS:
 			dc = NULL;
+			button = (xcb_button_press_event_t *)event;
 			for (int j = 0; j < bar.ndc; j++)
-				if (bar.dcs[j]->xbar.win == event.xbutton.window)
-					dc = bar.dcs[j];
+				if (bar.dcs[j].xbar.win == button->event)
+					dc = &bar.dcs[j];
 			if (!dc)
 				break;
 			/* handle evnent */
 			for (int j = 0; j < dc->nlabel; j++) {
 				if (!dc->labels[j].option->any.handler)
 					continue;
-				if (dc->labels[j].x < event.xbutton.x &&
-				    event.xbutton.x < dc->labels[j].x +
-				    dc->labels[j].width) {
+				if (IS_LABEL_EVENT(dc->labels[j], button)) {
 					dc->labels[j].option->any.handler(event);
 					res = PR_UPDATE;
 					break;
 				}
 			}
 			break;
-		case PropertyNotify:
-			if (event.xproperty.atom == xembed_info) {
+		case XCB_PROPERTY_NOTIFY:
+			prop = (xcb_property_notify_event_t *)event;
+			if (prop->atom == xembed_info) {
 				systray_handle(tray, event);
-			} else if (is_change_active_window_event(event) ||
-			           event.xproperty.atom == filter) {
-				windowtitle_update(bar.dpy, bar.scr);
+			} else if (is_change_active_window_event(prop) || prop->atom == ewmh._NET_WM_NAME) {
+				windowtitle_update(bar.xcb, 0);
 				res = PR_UPDATE;
 			}
 			break;
-		case ClientMessage:
+		case XCB_CLIENT_MESSAGE:
 			systray_handle(tray, event);
 			res = PR_UPDATE;
 			break;
-		case UnmapNotify:
-			systray_remove_item(tray, event.xunmap.window);
+		case XCB_UNMAP_NOTIFY:
+			win = ((xcb_unmap_notify_event_t *)event)->event;
+			systray_remove_item(tray, win);
 			res = PR_UPDATE;
 			break;
-		case DestroyNotify:
-			systray_remove_item(tray, event.xdestroywindow.window);
+		case XCB_DESTROY_NOTIFY:
+			win = ((xcb_destroy_notify_event_t *)event)->event;
+			systray_remove_item(tray, win);
 			res = PR_UPDATE;
 			break;
 		}
+		free(event);
 	}
 	return res;
 }
@@ -1510,7 +1579,7 @@ void
 poll_loop(void (* handler)())
 {
 	int i, nfd, need_render;
-	PollFD *pollfd;
+	poll_fd_t *pollfd;
 
 #if defined(__linux)
 	/* timer for rendering at one sec interval */
@@ -1525,7 +1594,7 @@ poll_loop(void (* handler)())
 #endif
 
 	/* polling X11 event for modules */
-	xfd.fd = ConnectionNumber(bar.dpy);
+	xfd.fd = xcb_get_file_descriptor(bar.xcb);
 	xfd.handler = xev_handle;
 	poll_add(&xfd);
 
@@ -1543,9 +1612,9 @@ poll_loop(void (* handler)())
 #endif
 		for (i = 0; i < nfd; i++) {
 #if defined(__linux)
-			pollfd = (PollFD *)events[i].data.ptr;
+			pollfd = (poll_fd_t *)events[i].data.ptr;
 #elif defined(__OpenBSD__)
-			pollfd = (PollFD *)events[i].udata;
+			pollfd = (poll_fd_t *)events[i].udata;
 #endif
 			switch ((int)pollfd->handler(pollfd->fd)) {
 			case PR_UPDATE:
@@ -1563,7 +1632,7 @@ poll_loop(void (* handler)())
 			/* force render after interval */
 			timerfd_settime(tfd, 0, &interval, NULL);
 #endif
-			windowtitle_update(bar.dpy, bar.scr);
+			windowtitle_update(bar.xcb, 0);
 			handler();
 		}
 	}
@@ -1590,26 +1659,34 @@ signal_handler(int signum)
  * cleanup() - cleanup resources
  */
 void
-cleanup(Display *dpy)
+cleanup(xcb_connection_t *xcb)
 {
 	int i;
 	if (wintitle)
-		XFree(wintitle);
+		free(wintitle);
 
 	if (tray)
 		systray_destroy(tray);
-	for (i = 0; i < ncol; i++)
-		color_free(cols[i]);
+	for (i = 0; i < ncol; i++) {
+		free(cols[i]->name);
+		free(cols[i]);
+	}
+	free(cols);
 	bspwmbar_destroy();
-	XCloseDisplay(dpy);
+	FT_Done_FreeType(ftlib);
+	xcb_ewmh_connection_wipe(&ewmh);
+	xcb_disconnect(xcb);
 	FcFini();
 }
 
 void
 run()
 {
-	Display *dpy;
 	struct sigaction act;
+	xcb_connection_t *xcb;
+	xcb_screen_t *scr;
+	xcb_change_window_attributes_value_list_t attrs;
+	uint32_t mask = XCB_CW_EVENT_MASK;
 
 	sigemptyset(&act.sa_mask);
 	act.sa_handler = &signal_handler;
@@ -1622,21 +1699,17 @@ run()
 	/* polling initialize for modules */
 	poll_init();
 
-	if (!(dpy = XOpenDisplay(NULL)))
-		die("XOpenDisplay(): Failed to open display\n");
-	XSetErrorHandler(error_handler);
-
-#ifndef DISABLE_XDBE
-	/* Xdbe initialize */
-	int major, minor;
-	if (XdbeQueryExtension(dpy, &major, &minor))
-		xdbe_support = 1;
-#endif
+	if (!(xcb = xcb_connect(NULL, NULL)))
+		die("xcb_connect(): Failed to connect to X server\n");
+	scr = xcb_setup_roots_iterator(xcb_get_setup(xcb)).data;
+	if (!xcb_ewmh_init_atoms_replies(&ewmh, xcb_ewmh_init_atoms(xcb, &ewmh), NULL))
+		die("xcb_ewmh_init_atoms(): Failed to initialize atoms\n");
+	FT_Init_FreeType(&ftlib);
 
 	/* get active widnow title */
-	windowtitle_update(dpy, DefaultScreen(dpy));
+	windowtitle_update(xcb, 0);
 
-	if (bspwmbar_init(dpy, DefaultScreen(dpy))) {
+	if (bspwmbar_init(xcb, scr)) {
 		err("bspwmbar_init(): Failed to init bspwmbar\n");
 		goto CLEANUP;
 	}
@@ -1648,7 +1721,7 @@ run()
 	}
 
 	/* tray initialize */
-	if (!(tray = systray_new(dpy, bar.dcs[0]->xbar.win))) {
+	if (!(tray = systray_new(xcb, scr, bar.dcs[0].xbar.win))) {
 		err("systray_new(): Selection already owned by other window\n");
 		goto CLEANUP;
 	}
@@ -1672,26 +1745,23 @@ run()
 	poll_add(&bfd);
 
 	/* wait PropertyNotify events of root window */
-	XSetWindowAttributes attrs;
-	attrs.event_mask = PropertyChangeMask;
-	XChangeWindowAttributes(bar.dpy, XRootWindow(bar.dpy, bar.scr), CWEventMask,
-	                        &attrs);
+	attrs.event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
+	xcb_change_window_attributes_aux(bar.xcb, scr->root, mask, &attrs);
 
 	/* polling X11 event for modules */
+	attrs.event_mask = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_EXPOSURE;
 	for (int i = 0; i < bar.ndc; i++)
-		XSelectInput(bar.dpy, bar.dcs[i]->xbar.win,
-		             ButtonPressMask | ExposureMask);
+		xcb_change_window_attributes_aux(bar.xcb, bar.dcs[i].xbar.win, mask, &attrs);
 
 	/* cache Atom */
-	filter = XInternAtom(bar.dpy, "_NET_WM_NAME", 0);
-	xembed_info = XInternAtom(bar.dpy, "_XEMBED_INFO", 0);
+	xembed_info = xcb_atom_get(bar.xcb, "_XEMBED_INFO", false);
 
 	/* main loop */
 	poll_loop(render);
 
 CLEANUP:
 	/* cleanup resources */
-	cleanup(dpy);
+	cleanup(xcb);
 }
 
 int

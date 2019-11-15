@@ -75,11 +75,11 @@ mem_perc()
 }
 
 void
-memgraph(DC dc, Option opts)
+memgraph(draw_context_t *dc, module_option_t *opts)
 {
-	GraphItem items[10];
-	Color fgcols[4];
-	Color bgcol;
+	graph_item_t items[10];
+	color_t *fgcols[4];
+	color_t *bgcol;
 	double used = mem_perc();
 	int i;
 

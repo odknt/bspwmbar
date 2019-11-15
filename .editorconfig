@@ -12,7 +12,6 @@ tab_width = 4
 
 [*.{c,h}]
 indent_style = tab
-max_line_length = 80
 
 [Makefile]
 indent_style = tab

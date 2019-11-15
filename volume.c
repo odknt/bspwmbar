@@ -7,7 +7,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/audioio.h>
-#include <X11/Xlib.h>
+#include <xcb/xcb.h>
 
 #include "bspwmbar.h"
 #include "util.h"
@@ -101,7 +101,7 @@ init_devinfo(int fd)
 }
 
 void
-volume(DC dc, Option opts)
+volume(draw_context_t *dc, module_option_t *opts)
 {
 	if (!file) {
 		if ((file = getenv("MIXERDEVICE")) == 0 || *file == '\0')
@@ -153,24 +153,27 @@ set_volume(int fd, int vol)
 }
 
 void
-volume_ev(XEvent ev)
+volume_ev(xcb_generic_event_t *ev)
 {
-	int fd;
+	xcb_button_press_event_t *button;
+	int fd, vol;
+
 	if ((fd = open(file, O_RDWR)) < 0)
 		die("volume: failed to open %s\n", file);
 
-	int vol = get_volume(fd);
+	vol = get_volume(fd);
 
-	switch (ev.type) {
-	case ButtonPress:
-		switch (ev.xbutton.button) {
-		case Button1:
+	switch (ev->response_type & ~0x80) {
+	case XCB_BUTTON_PRESS:
+		button = (xcb_button_press_event_t *)ev;
+		switch (button->detail) {
+		case XCB_BUTTON_INDEX_1:
 			toggle_mute(fd);
 			break;
-		case Button4:
+		case XCB_BUTTON_INDEX_4:
 			set_volume(fd, SMALLER(vol + 12, 255));
 			break;
-		case Button5:
+		case XCB_BUTTON_INDEX_5:
 			set_volume(fd, BIGGER(vol - 12, 0));
 			break;
 		}

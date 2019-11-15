@@ -3,14 +3,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <X11/Xlib.h>
+#include <string.h>
+#include <xcb/xcb.h>
 
 #include "util.h"
-
-static int xerror_handler(Display *, XErrorEvent *);
-
-static int xerror = 0;
-static int (* handler)(Display *, XErrorEvent *) = NULL;
 
 int
 pscanf(const char *path, const char *fmt, ...)
@@ -61,37 +57,17 @@ list_del(list_head *head)
 	prev->next = next;
 }
 
-void
-xerror_begin()
+xcb_atom_t
+xcb_atom_get(xcb_connection_t *xcb, const char *name, bool only_exists)
 {
-	xerror = 0;
-	handler = XSetErrorHandler(xerror_handler);
-}
+	xcb_atom_t atom;
+	xcb_intern_atom_reply_t *atom_reply;
 
-void
-xerror_end()
-{
-	if (handler)
-		XSetErrorHandler(handler);
-	handler = NULL;
-}
+	if (!(atom_reply = xcb_intern_atom_reply(xcb, xcb_intern_atom(xcb, only_exists, strlen(name), name), NULL)))
+		return 0;
 
-int
-xerror_catch(Display *dpy)
-{
-	int err;
+	atom = atom_reply->atom;
+	free(atom_reply);
 
-	XSync(dpy, 0);
-	err = xerror;
-	xerror = 0;
-
-	return err;
-}
-
-int
-xerror_handler(Display *dpy, XErrorEvent *err)
-{
-	(void)dpy;
-	xerror = err->type;
-	return 0;
+	return atom;
 }

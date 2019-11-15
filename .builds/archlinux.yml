@@ -1,11 +1,13 @@
 image: archlinux
 packages:
   - alsa-lib
-  - libx11
-  - libxft
-  - libxrandr
-  - libxext
+  - cairo
   - fontconfig
+  - freetype2
+  - harfbuzz
+  - libxcb
+  - xcb-util
+  - xcb-util-wm
 sources:
   - https://github.com/odknt/bspwmbar
 tasks:

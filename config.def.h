@@ -37,7 +37,7 @@ const char *fontname = "sans-serif:size=10";
  */
 
 /* modules on the left */
-Module left_modules[] = {
+module_t left_modules[] = {
 	{ /* Arch logo */
 		.text = {
 			.func = text,
@@ -62,7 +62,7 @@ Module left_modules[] = {
 };
 
 /* modules on the right */
-Module right_modules[] = {
+module_t right_modules[] = {
 	{ /* system tray */
 		.tray = {
 			.func = systray,

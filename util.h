@@ -3,6 +3,9 @@
 #ifndef BSPWMBAR_UTIL_H_
 #define BSPWMBAR_UTIL_H_
 
+#include <stdbool.h>
+#include <xcb/xcb.h>
+
 /* utility macros */
 #define LENGTH(X)        (sizeof (X) / sizeof (X[0]))
 #define BETWEEN(X, A, B) ((A) <= (X) && (X) <= (B))
@@ -12,8 +15,6 @@
 
 #define die(...) { fprintf(stderr, __VA_ARGS__); exit(1); }
 #define err(...) { fprintf(stderr, __VA_ARGS__); }
-
-extern char buf[1024];
 
 int pscanf(const char *, const char *, ...);
 
@@ -39,8 +40,9 @@ void list_add_tail(list_head *head, list_head *entry);
 void list_del(list_head *head);
 
 /* Xlib error catch */
-void xerror_begin();
-int xerror_catch(Display *);
-void xerror_end();
+xcb_atom_t xcb_atom_get(xcb_connection_t *, const char *, bool);
+
+/* temporary buffer */
+char buf[1024];
 
 #endif

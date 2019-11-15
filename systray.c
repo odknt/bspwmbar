@@ -6,14 +6,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <X11/Xatom.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
+#include <stdbool.h>
+#include <xcb/xcb.h>
+#include <xcb/xcb_util.h>
 
 #include "bspwmbar.h"
 #include "systray.h"
 
-#define ATOM_SYSTRAY "_NET_SYSTEM_TRAY_S"
+#define ATOM_SYSTRAY "_NET_SYSTEM_TRAY_S0"
 
 #define XEMBED_EMBEDDED_NOTIFY        0
 #define XEMBED_WINDOW_ACTIVATE        1
@@ -46,163 +46,158 @@ enum {
 	SYSTRAY_CANCEL_MESSAGE,
 };
 
-struct _SystemTray {
-	Display *dpy;
-	Window win;
+struct _systray_t {
+	xcb_connection_t *xcb;
+	xcb_screen_t *scr;
+	xcb_window_t win;
 	int icon_size;
 	list_head items;
 };
 
 /* functions */
-static int xembed_send(Display *, Window, long, long, long, long);
-static int xembed_embedded_notify(SystemTray, Window, long);
-static int xembed_unembed_window(SystemTray, Window);
-static int xembed_getinfo(SystemTray, Window, XEmbedInfo *);
-static Atom get_systray_atom(Display *);
-static void set_selection_owner(SystemTray, Atom);
-static int systray_get_ownership(SystemTray);
-static TrayItem *systray_append_item(SystemTray, Window);
-static TrayItem *systray_find_item(SystemTray, Window);
+static bool xembed_send(xcb_connection_t *, xcb_window_t, long, long, long, long);
+static bool xembed_embedded_notify(systray_t *, xcb_window_t, long);
+static int xembed_unembed_window(systray_t *, xcb_window_t);
+static bool xembed_getinfo(systray_t *, xcb_window_t, xembed_info_t *);
+static xcb_atom_t get_systray_atom(xcb_connection_t *);
+static bool systray_set_selection_owner(systray_t *, xcb_atom_t);
+static bool systray_get_ownership(systray_t *);
+static systray_item_t *systray_append_item(systray_t *, xcb_window_t);
+static systray_item_t *systray_find_item(systray_t *, xcb_window_t);
 
-Atom
-get_systray_atom(Display *dpy)
+xcb_atom_t
+get_systray_atom(xcb_connection_t *xcb)
 {
-	static Atom systray_atom = 0;
+	static xcb_atom_t systray_atom = 0;
 	if (systray_atom)
 		return systray_atom;
-	size_t len = strlen(ATOM_SYSTRAY) + sizeof(int) + 1;
-	char *atomstr = (char *)alloca(len);
-	snprintf(atomstr, len, ATOM_SYSTRAY "%d", DefaultScreen(dpy));
-	systray_atom = XInternAtom(dpy, atomstr, 0);
+	systray_atom = xcb_atom_get(xcb, ATOM_SYSTRAY, false);
 	return systray_atom;
 }
 
-void
-set_selection_owner(SystemTray tray, Atom atom)
+bool
+systray_set_selection_owner(systray_t *tray, xcb_atom_t atom)
 {
-	XSetSelectionOwner(tray->dpy, atom, tray->win, CurrentTime);
+	return xcb_request_check(tray->xcb, xcb_set_selection_owner(tray->xcb, tray->win, atom, XCB_TIME_CURRENT_TIME)) == NULL;
 }
 
-int
-systray_get_ownership(SystemTray tray)
+xcb_window_t
+get_selection_owner(xcb_connection_t *xcb, xcb_atom_t atom)
 {
-	Atom atom = get_systray_atom(tray->dpy);
-	if (XGetSelectionOwner(tray->dpy, atom) != None)
-		return -1;
+	xcb_window_t win;
+	xcb_get_selection_owner_reply_t *or;
+	or = xcb_get_selection_owner_reply(xcb, xcb_get_selection_owner(xcb, atom), NULL);
+	win = or->owner;
+	free(or);
+	return win;
+}
 
-	set_selection_owner(tray, atom);
-	return 0;
+bool
+systray_get_ownership(systray_t *tray)
+{
+	xcb_atom_t atom = get_systray_atom(tray->xcb);
+	if (get_selection_owner(tray->xcb, atom))
+		return false;
+
+	return systray_set_selection_owner(tray, atom);
 }
 
 /**
- * systray_new() - Initialize SystemTray object.
- * @dpy: A display pointer of win.
+ * systray_new() - Initialize systray_t *object.
+ * @xcb: A display pointer of win.
  * @win: A window for system tray.
  *
  * Return: A new system tray object.
  */
-SystemTray
-systray_new(Display *dpy, Window win)
+systray_t *
+systray_new(xcb_connection_t *xcb, xcb_screen_t *scr, xcb_window_t win)
 {
-	SystemTray tray = (SystemTray)calloc(1, sizeof(struct _SystemTray));
-	XSetWindowAttributes wattrs;
+	xcb_client_message_event_t ev = { 0 };
+	systray_t *tray = (systray_t *)calloc(1, sizeof(struct _systray_t));
 	list_head_init(&tray->items);
-	tray->dpy = dpy;
+	tray->xcb = xcb;
+	tray->scr = scr;
 	tray->win = win;
 
-	if (systray_get_ownership(tray)) {
+	if (!systray_get_ownership(tray)) {
 		free(tray);
 		return NULL;
 	}
 
-	wattrs.event_mask = ClientMessage;
-	XChangeWindowAttributes(tray->dpy, tray->win, CWEventMask, &wattrs);
-
-	XEvent ev = { 0 };
-	ev.xclient.type = ClientMessage;
-	ev.xclient.message_type = XInternAtom(tray->dpy, "MANAGER", 0);
-	ev.xclient.format = 32;
-	ev.xclient.data.l[0] = CurrentTime;
-	ev.xclient.data.l[1] = get_systray_atom(tray->dpy);
-	ev.xclient.data.l[2] = tray->win;
-	ev.xclient.data.l[3] = 0;
-	ev.xclient.data.l[4] = 0;
-
-	XSendEvent(tray->dpy, tray->win, 0, StructureNotifyMask, &ev);
+	ev.response_type = XCB_CLIENT_MESSAGE;
+	ev.type = xcb_atom_get(tray->xcb, "MANAGER", false);
+	ev.format = 32;
+	ev.data.data32[0] = XCB_TIME_CURRENT_TIME;
+	ev.data.data32[1] = get_systray_atom(tray->xcb);
+	ev.data.data32[2] = tray->win;
+	ev.data.data32[3] = 0;
+	ev.data.data32[4] = 0;
+	xcb_send_event(xcb, 0, tray->win, XCB_EVENT_MASK_STRUCTURE_NOTIFY, (const char *)&ev);
 
 	return tray;
 }
 
-int
-xembed_send(Display *dpy, Window win, long message, long d1, long d2, long d3)
+bool
+xembed_send(xcb_connection_t *xcb, xcb_window_t win, long message, long d1, long d2, long d3)
 {
-	XEvent ev = { 0 };
-	ev.xclient.type = ClientMessage;
-	ev.xclient.window = win;
-	ev.xclient.message_type = XInternAtom(dpy, "_XEMBED", 0);
-	ev.xclient.format = 32;
-	ev.xclient.data.l[0] = CurrentTime;
-	ev.xclient.data.l[1] = message;
-	ev.xclient.data.l[2] = d1;
-	ev.xclient.data.l[3] = d2;
-	ev.xclient.data.l[4] = d3;
+	xcb_client_message_event_t ev = { 0 };
 
-	if (!XSendEvent(dpy, win, 0, NoEventMask, &ev))
-		return 1;
-	XSync(dpy, 0);
+	ev.response_type = XCB_CLIENT_MESSAGE;
+	ev.window = win;
+	ev.type = xcb_atom_get(xcb, "_XEMBED", false);
+	ev.format = 32;
+	ev.data.data32[0] = XCB_TIME_CURRENT_TIME;
+	ev.data.data32[1] = message;
+	ev.data.data32[2] = d1;
+	ev.data.data32[3] = d2;
+	ev.data.data32[4] = d3;
+
+	if (xcb_request_check(xcb, xcb_send_event(xcb, 0, win, XCB_EVENT_MASK_STRUCTURE_NOTIFY, (const char *)&ev)))
+		return false;
+	xcb_flush(xcb);
+
+	return true;
+}
+
+bool
+xembed_embedded_notify(systray_t *tray, xcb_window_t win, long version)
+{
+	return xembed_send(tray->xcb, win, XEMBED_EMBEDDED_NOTIFY, 0, tray->win, version);
+}
+
+int
+xembed_unembed_window(systray_t *tray, xcb_window_t child)
+{
+	xcb_unmap_window(tray->xcb, child);
+	xcb_reparent_window(tray->xcb, child, tray->scr->root, 0, 0);
 
 	return 0;
 }
 
-int
-xembed_embedded_notify(SystemTray tray, Window win, long version)
+bool
+xembed_getinfo(systray_t *tray, xcb_window_t win, xembed_info_t *info)
 {
-	return xembed_send(tray->dpy, win, XEMBED_EMBEDDED_NOTIFY, 0, tray->win,
-	                   version);
+	xcb_atom_t infoatom;
+	xcb_get_property_reply_t *prop;
+	uint32_t *xembed;
+
+	if (!(infoatom = xcb_atom_get(tray->xcb, "_XEMBED_INFO", false)))
+		return false;
+	if (!(prop = xcb_get_property_reply(tray->xcb, xcb_get_property(tray->xcb, 0, win, infoatom, XCB_GET_PROPERTY_TYPE_ANY, 0, 8), NULL)))
+		return false;
+	xembed = (uint32_t *)xcb_get_property_value(prop);
+
+	info->version = xembed[0];
+	info->flags = xembed[1];
+
+	free(prop);
+	return true;
 }
 
-int
-xembed_unembed_window(SystemTray tray, Window child)
+systray_item_t *
+systray_append_item(systray_t *tray, xcb_window_t win)
 {
-	int err;
-	xerror_begin();
-
-	XUnmapWindow(tray->dpy, child);
-	XReparentWindow(tray->dpy, child, DefaultRootWindow(tray->dpy), 0, 0);
-
-	err = xerror_catch(tray->dpy);
-	xerror_end();
-
-	return err;
-}
-
-int
-xembed_getinfo(SystemTray tray, Window win, XEmbedInfo *info)
-{
-	Atom type, infoatom;
-	int format, status;
-	unsigned long nitem, bytes_after;
-	unsigned char *data;
-
-	infoatom = XInternAtom(tray->dpy, "_XEMBED_INFO", 0);
-	status = XGetWindowProperty(tray->dpy, win, infoatom, 0, 2, 0, infoatom,
-	                            &type, &format, &nitem, &bytes_after, &data);
-	XSync(tray->dpy, 0);
-	if (status)
-		return 1;
-
-	unsigned long *long_data = (unsigned long *)data;
-	info->version = long_data[0];
-	info->flags = long_data[1];
-	XFree(data);
-
-	return 0;
-}
-
-TrayItem *
-systray_append_item(SystemTray tray, Window win)
-{
-	TrayItem *item = calloc(1, sizeof(TrayItem));
+	systray_item_t *item = calloc(1, sizeof(systray_item_t));
 	item->win = win;
 
 	list_add_tail(&tray->items, &item->head);
@@ -211,23 +206,23 @@ systray_append_item(SystemTray tray, Window win)
 }
 
 void
-systray_set_icon_size(SystemTray tray, int size)
+systray_set_icon_size(systray_t *tray, int size)
 {
 	tray->icon_size = size;
 }
 
 int
-systray_icon_size(SystemTray tray)
+systray_icon_size(systray_t *tray)
 {
 	return tray->icon_size;
 }
 
-TrayItem *
-systray_find_item(SystemTray tray, Window win)
+systray_item_t *
+systray_find_item(systray_t *tray, xcb_window_t win)
 {
 	list_head *pos;
 	list_for_each(&tray->items, pos) {
-		TrayItem *item = list_entry(pos, TrayItem, head);
+		systray_item_t *item = list_entry(pos, systray_item_t, head);
 		if (item->win == win)
 			return item;
 	}
@@ -235,11 +230,11 @@ systray_find_item(SystemTray tray, Window win)
 }
 
 void
-systray_remove_item(SystemTray tray, Window win)
+systray_remove_item(systray_t *tray, xcb_window_t win)
 {
 	list_head *pos;
 	list_for_each(&tray->items, pos) {
-		TrayItem *item = list_entry(pos, TrayItem, head);
+		systray_item_t *item = list_entry(pos, systray_item_t, head);
 		if (item->win == win) {
 			list_del(pos);
 			free(item);
@@ -249,60 +244,72 @@ systray_remove_item(SystemTray tray, Window win)
 }
 
 int
-systray_handle(SystemTray tray, XEvent ev)
+systray_handle(systray_t *tray, xcb_generic_event_t *ev)
 {
-	Atom atom;
+	xcb_atom_t atom;
+	xcb_selection_clear_event_t *selection;
+	xcb_client_message_event_t *client;
+	xcb_property_notify_event_t *property;
+	xcb_change_window_attributes_value_list_t attrs = { 0 };
+	xcb_configure_window_value_list_t config = { 0 };
+	systray_item_t *item;
 
-	switch (ev.type) {
-	case SelectionClear:
-		atom = get_systray_atom(tray->dpy);
-		if (ev.xselection.selection == atom)
-			set_selection_owner(tray, get_systray_atom(tray->dpy));
+	switch (ev->response_type & ~0x80) {
+	case XCB_SELECTION_CLEAR:
+		selection = (xcb_selection_clear_event_t *)ev;
+		atom = get_systray_atom(tray->xcb);
+		if (selection->selection == atom)
+			systray_set_selection_owner(tray, get_systray_atom(tray->xcb));
 		break;
-	case ClientMessage:
-		atom = XInternAtom(tray->dpy, "_NET_SYSTEM_TRAY_OPCODE", 0);
-		if (ev.xclient.message_type != atom)
+	case XCB_CLIENT_MESSAGE:
+		client = (xcb_client_message_event_t *)ev;
+		atom = xcb_atom_get(tray->xcb, "_NET_SYSTEM_TRAY_OPCODE", true);
+		if (client->type != atom)
 			return 1;
 
-		Window win = 0;
-		TrayItem *item;
-		switch (ev.xclient.data.l[SYSTRAY_OPCODE]) {
+		xcb_window_t win = 0;
+		switch (client->data.data32[SYSTRAY_OPCODE]) {
 		case SYSTRAY_REQUEST_DOCK:
-			win = ev.xclient.data.l[SYSTRAY_DATA1];
+			win = client->data.data32[SYSTRAY_DATA1];
 
-			/* catch BadWindow error */
-			xerror_begin();
-
-			XSelectInput(tray->dpy, win, StructureNotifyMask | PropertyChangeMask);
-			if (tray->icon_size)
-				XResizeWindow(tray->dpy, win, tray->icon_size, tray->icon_size);
-			XReparentWindow(tray->dpy, win, tray->win, 0, 0);
-			xembed_embedded_notify(tray, win, 0);
-
-			if (!xerror_catch(tray->dpy)) {
-				item = systray_append_item(tray, win);
-				xembed_getinfo(tray, win, &item->info);
+			attrs.event_mask = XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE;
+			xcb_change_window_attributes_aux(tray->xcb, win, XCB_CW_EVENT_MASK, &attrs);
+			if (tray->icon_size) {
+				config.width = tray->icon_size;
+				config.height = tray->icon_size;
+				xcb_configure_window_aux(tray->xcb, win, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, &config);
 			}
-			xerror_end();
+			if (xcb_request_check(tray->xcb, xcb_reparent_window(tray->xcb, win, tray->win, 0, 0)))
+				break;
+			if (xcb_request_check(tray->xcb, xcb_map_window(tray->xcb, win)))
+				break;
+
+			/* notify to the window */
+			xembed_embedded_notify(tray, win, 0);
+			item = systray_append_item(tray, win);
+			xembed_getinfo(tray, win, &item->info);
 
 			break;
 		}
 		break;
-	case PropertyNotify:
-		if (ev.xproperty.state == PropertyNewValue) {
-			if (!(item = systray_find_item(tray, ev.xproperty.window)))
+	case XCB_PROPERTY_NOTIFY:
+		property = (xcb_property_notify_event_t *)ev;
+		if (property->state == XCB_PROPERTY_NEW_VALUE) {
+			if (!(item = systray_find_item(tray, property->window)))
 				return 1;
-			XEmbedInfo info = { 0 };
-			xembed_getinfo(tray, ev.xproperty.window, &info);
+			xembed_info_t info = { 0 };
+			xembed_getinfo(tray, property->window, &info);
 
 			if (!(item->info.flags ^ info.flags))
 				return 0;
 
 			item->info.flags = info.flags;
-			if (item->info.flags & XEMBED_MAPPED)
-				XMapRaised(tray->dpy, item->win);
-			else
-				XUnmapWindow(tray->dpy, item->win);
+			if (item->info.flags & XEMBED_MAPPED) {
+				config.stack_mode = XCB_STACK_MODE_ABOVE;
+				xcb_configure_window_aux(tray->xcb, property->window, XCB_CONFIG_WINDOW_STACK_MODE, &config);
+			} else {
+				xcb_unmap_window(tray->xcb, item->win);
+			}
 		}
 		break;
 	}
@@ -310,35 +317,35 @@ systray_handle(SystemTray tray, XEvent ev)
 }
 
 list_head *
-systray_get_items(SystemTray tray)
+systray_get_items(systray_t *tray)
 {
 	return &tray->items;
 }
 
-Display *
-systray_get_display(SystemTray tray)
+xcb_connection_t *
+systray_get_connection(systray_t *tray)
 {
-	return tray->dpy;
+	return tray->xcb;
 }
 
-Window
-systray_get_window(SystemTray tray)
+xcb_window_t
+systray_get_window(systray_t *tray)
 {
 	return tray->win;
 }
 
 void
-systray_destroy(SystemTray tray)
+systray_destroy(systray_t *tray)
 {
 	if (!tray)
 		return;
-	Atom atom = get_systray_atom(tray->dpy);
+	xcb_atom_t atom = get_systray_atom(tray->xcb);
 	if (atom)
-		XSetSelectionOwner(tray->dpy, atom, None, CurrentTime);
+		xcb_set_selection_owner(tray->xcb, atom, XCB_NONE, XCB_TIME_CURRENT_TIME);
 
 	list_head *pos, *tmp;
 	list_for_each_safe(&tray->items, pos, tmp) {
-		TrayItem *item = list_entry(pos, TrayItem, head);
+		systray_item_t *item = list_entry(pos, systray_item_t, head);
 		xembed_unembed_window(tray, item->win);
 		list_del(pos);
 		free(item);
