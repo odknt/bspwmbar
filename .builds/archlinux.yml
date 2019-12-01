@@ -8,6 +8,8 @@ packages:
   - libxcb
   - xcb-util
   - xcb-util-wm
+  - xcb-util-image
+  - xcb-util-renderutil
 sources:
   - https://github.com/odknt/bspwmbar
 tasks:
