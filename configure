@@ -5,7 +5,7 @@ VERSION=v0.6.0
 PREFIX=/usr/local
 
 PKGCONFIG='pkg-config'
-DEPS='xcb xcb-ewmh xcb-util xcb-randr cairo harfbuzz fontconfig'
+DEPS='xcb xcb-ewmh xcb-util xcb-randr xcb-shm xcb-renderutil cairo harfbuzz fontconfig'
 MODS='cpu memory disk thermal datetime'
 
 # debug flags

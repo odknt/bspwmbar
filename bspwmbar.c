@@ -23,14 +23,19 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <time.h>
 #include <unistd.h>
 
 /* XCB */
 #include <xcb/xcb.h>
+#include <xcb/shm.h>
 #include <xcb/xcb_util.h>
 #include <xcb/xcb_ewmh.h>
 #include <xcb/xcb_icccm.h>
+#include <xcb/xcb_image.h>
+#include <xcb/xcb_renderutil.h>
 #include <xcb/randr.h>
 
 #include <ft2build.h>
@@ -131,6 +136,7 @@ struct _draw_context_t {
 	xcb_visualtype_t *visual;
 	xcb_gcontext_t gc;
 	xcb_drawable_t buf;
+	xcb_shm_segment_info_t shm_info;
 	draw_align_t align;
 	cairo_t *cr;
 
@@ -206,6 +212,7 @@ static bool color_load_name(const char *, color_t *);
 static void signal_handler(int);
 static xcb_window_t get_active_window(uint8_t scrno);
 static xcb_visualtype_t *xcb_visualtype_get(xcb_screen_t *);
+static bool xcb_shm_support(xcb_connection_t *);
 static void xcb_gc_color(xcb_connection_t *, xcb_gcontext_t, color_t *);
 static char *get_window_title(xcb_connection_t *, xcb_window_t);
 static FT_UInt get_font(FcChar32 rune, font_t **);
@@ -213,7 +220,7 @@ static bool load_fonts(const char *);
 static void font_destroy(font_t font);
 static size_t load_glyphs_from_hb_buffer(draw_context_t *, hb_buffer_t *, font_t *, int *, int, glyph_font_spec_t *, size_t);
 static int load_glyphs(draw_context_t *, const char *, glyph_font_spec_t *, int, int *);
-static void dc_init(draw_context_t *, xcb_connection_t *, xcb_screen_t *, int, int, int, int);
+static bool dc_init(draw_context_t *, xcb_connection_t *, xcb_screen_t *, int, int, int, int);
 static void dc_free(draw_context_t);
 static int dc_get_x(draw_context_t *);
 static void dc_move_x(draw_context_t *, int);
@@ -229,7 +236,7 @@ static desktop_state_t bspwm_desktop_state(char);
 static void windowtitle_update(xcb_connection_t *, uint8_t);
 static void render();
 static int get_baseline();
-static int bspwmbar_init(xcb_connection_t *, xcb_screen_t *);
+static bool bspwmbar_init(xcb_connection_t *, xcb_screen_t *);
 static void bspwmbar_destroy();
 static void poll_init();
 static void poll_loop(void (*)());
@@ -243,6 +250,11 @@ static bool is_change_active_window_event(xcb_property_notify_event_t *);
 static void cleanup(xcb_connection_t *);
 static void run();
 
+/**
+ * color_load_hex() - load a color from hex string
+ * @colstr: hex string (#RRGGBB)
+ * @color: (out) loaded color.
+ */
 void
 color_load_hex(const char *colstr, color_t *color)
 {
@@ -257,6 +269,13 @@ color_load_hex(const char *colstr, color_t *color)
 	color->pixel = 0xff000000 | color->red << 16 | color->green << 8 | color->blue;
 }
 
+/**
+ * color_load_name() - load a named color.
+ * @colstr: color name.
+ * @color: (out) loaded color.
+ *
+ * Return: bool
+ */
 bool
 color_load_name(const char *colstr, color_t *color)
 {
@@ -381,6 +400,51 @@ xcb_visualtype_get(xcb_screen_t *scr)
 }
 
 /**
+ * xcb_shm_support() - check shm extension is usable on the X server.
+ * @xcb: xcb connection.
+ *
+ * Return: bool
+ */
+bool
+xcb_shm_support(xcb_connection_t *xcb)
+{
+	xcb_shm_query_version_reply_t *version_reply;
+	bool supported = (version_reply = xcb_shm_query_version_reply(xcb, xcb_shm_query_version(xcb), NULL)) && version_reply->shared_pixmaps;
+	free(version_reply);
+	return supported;
+}
+
+/**
+ * xcb_create_pixmap_with_shm() - create a new pixmap by using shm extension.
+ * @xcb: xcb connection.
+ * @scr: screen.
+ * @pixmap: pixmap id.
+ * @width: width of pixmap.
+ * @height: height of pixmap.
+ * @info: (out) shm segment information of the pixmap.
+ *
+ * Return: bool
+ */
+bool
+xcb_create_pixmap_with_shm(xcb_connection_t *xcb, xcb_screen_t *scr, xcb_pixmap_t pixmap, uint32_t width, uint32_t height, xcb_shm_segment_info_t *info)
+{
+	info->shmid = shmget(IPC_PRIVATE, width * height * 4, IPC_CREAT | 0777);
+	info->shmaddr = shmat(info->shmid, 0, 0);
+	info->shmseg = xcb_generate_id(xcb);
+	if (xcb_request_check(xcb, xcb_shm_attach(xcb, info->shmseg, info->shmid, 0))) {
+		shmctl(info->shmid, IPC_RMID, 0);
+		shmdt(info->shmaddr);
+		return false;
+	}
+	shmctl(info->shmid, IPC_RMID, 0);
+	if (xcb_request_check(xcb, xcb_shm_create_pixmap(xcb, pixmap, scr->root, width, height, scr->root_depth, info->shmseg, 0))) {
+		shmdt(info->shmaddr);
+		return false;
+	}
+	return true;
+}
+
+/**
  * dc_init() - initialize DC.
  * @dc: draw context.
  * @xcb: xcb connection.
@@ -389,13 +453,17 @@ xcb_visualtype_get(xcb_screen_t *scr)
  * @y: window position y.
  * @width: window width.
  * @height: window height.
+ *
+ * Return: bool
  */
-void
+bool
 dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
         int y, int width, int height)
 {
 	xcb_configure_window_value_list_t winconf = { 0 };
 	xcb_create_gc_value_list_t gcv = { 0 };
+	xcb_render_query_pict_formats_reply_t *pict_reply;
+	xcb_render_pictforminfo_t *formats;
 	cairo_surface_t *surface;
 	window_t *xw = &dc->xbar;
 	int i = 0;
@@ -439,13 +507,26 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 	xcb_ewmh_set_wm_strut_partial(&ewmh, xw->win, strut_partial);
 
 	/* create graphic context */
-	dc->buf = xw->win;
+	dc->buf = xcb_generate_id(xcb);
 	dc->visual = xcb_visualtype_get(scr);
 
-	surface = cairo_xcb_surface_create(xcb, dc->buf, dc->visual, xw->width, xw->height);
-	dc->cr = cairo_create(surface);
-	cairo_surface_destroy(surface);
+	/* create pixmap image for rendering */
+	if (xcb_shm_support(xcb))
+		xcb_create_pixmap_with_shm(xcb, scr, dc->buf, width, height, &dc->shm_info);
+	else
+		xcb_create_pixmap(xcb, scr->root_depth, dc->buf, scr->root, width, height);
 
+	/* create cairo context */
+	pict_reply = xcb_render_query_pict_formats_reply(xcb, xcb_render_query_pict_formats(xcb), NULL);
+	formats = xcb_render_util_find_standard_format(pict_reply, XCB_PICT_STANDARD_RGB_24);
+	surface = cairo_xcb_surface_create_with_xrender_format(xcb, scr, dc->buf, formats, width, height);
+	dc->cr = cairo_create(surface);
+	cairo_set_operator(dc->cr, CAIRO_OPERATOR_SOURCE);
+	cairo_set_source_surface(dc->cr, surface, 0, 0);
+	cairo_surface_destroy(surface);
+	free(pict_reply);
+
+	/* create gc */
 	gcv.graphics_exposures = 1;
 	dc->gc = xcb_generate_id(xcb);
 	xcb_create_gc_aux(xcb, dc->gc, dc->buf, XCB_GC_GRAPHICS_EXPOSURES, &gcv);
@@ -470,6 +551,8 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 	winconf.stack_mode = XCB_STACK_MODE_BELOW;
 	xcb_configure_window_aux(xcb, xw->win, XCB_CONFIG_WINDOW_STACK_MODE, &winconf);
 	xcb_map_window(xcb, xw->win);
+
+	return true;
 }
 
 /**
@@ -480,6 +563,12 @@ void
 dc_free(draw_context_t dc)
 {
 	xcb_free_gc(bar.xcb, dc.gc);
+	if (dc.shm_info.shmseg) {
+		/* if using shm */
+		xcb_shm_detach(bar.xcb, dc.shm_info.shmseg);
+		shmdt(dc.shm_info.shmaddr);
+	}
+	xcb_free_pixmap(bar.xcb, dc.buf);
 	xcb_destroy_window(bar.xcb, dc.xbar.win);
 	cairo_destroy(dc.cr);
 	free(dc.xbar.monitor.desktops);
@@ -1090,8 +1179,8 @@ render_label(draw_context_t *dc)
 void
 xcb_gc_color(xcb_connection_t *xcb, xcb_gcontext_t gc, color_t *color)
 {
-	uint32_t values[] = { color->pixel, 0 };
-	xcb_change_gc(xcb, gc, XCB_GC_FOREGROUND, values);
+	xcb_change_gc_value_list_t values = { .foreground = color->pixel };
+	xcb_change_gc_aux(xcb, gc, XCB_GC_FOREGROUND, &values);
 }
 
 /**
@@ -1114,11 +1203,14 @@ render()
 		rect.height = xw->height;
 
 		xcb_gc_color(bar.xcb, dc->gc, bar.bg);
-		xcb_poly_fill_rectangle(bar.xcb, xw->win, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
 
 		/* render modules */
 		draw_padding(dc, celwidth);
 		render_label(dc);
+
+		/* copy pixmap to window */
+		xcb_copy_area(bar.xcb, dc->buf, xw->win, dc->gc, 0, 0, 0, 0, xw->width, xw->height);
 	}
 	xcb_flush(bar.xcb);
 }
@@ -1164,7 +1256,7 @@ bspwm_connect()
  * 0 - success
  * 1 - failure
  */
-int
+bool
 bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 {
 	xcb_randr_get_monitors_reply_t *mon_reply;
@@ -1199,8 +1291,8 @@ bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 		info_reply = xcb_randr_get_output_info_reply(xcb, xcb_randr_get_output_info(xcb, outputs[i], XCB_TIME_CURRENT_TIME), NULL);
 		if (info_reply->crtc != XCB_NONE) {
 			crtc_reply = xcb_randr_get_crtc_info_reply(xcb, xcb_randr_get_crtc_info(xcb, info_reply->crtc, XCB_TIME_CURRENT_TIME), NULL);
-			dc_init(&bar.dcs[nmon], xcb, scr, crtc_reply->x, crtc_reply->y, crtc_reply->width, BAR_HEIGHT);
-			strncpy(bar.dcs[nmon++].xbar.monitor.name, (const char *)xcb_randr_get_output_info_name(info_reply), NAME_MAXSZ);
+			if (dc_init(&bar.dcs[nmon], xcb, scr, crtc_reply->x, crtc_reply->y, crtc_reply->width, BAR_HEIGHT))
+				strncpy(bar.dcs[nmon++].xbar.monitor.name, (const char *)xcb_randr_get_output_info_name(info_reply), NAME_MAXSZ);
 			free(crtc_reply);
 		}
 		free(info_reply);
@@ -1208,12 +1300,15 @@ bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 	free(screen_reply);
 	free(mon_reply);
 
+	if (!nmon)
+		return false;
+
 	/* load_fonts */
 	if (!load_fonts(fontname))
-		return 1;
+		return false;
 
 	xcb_flush(xcb);
-	return 0;
+	return true;
 }
 
 /**
@@ -1709,7 +1804,7 @@ run()
 	/* get active widnow title */
 	windowtitle_update(xcb, 0);
 
-	if (bspwmbar_init(xcb, scr)) {
+	if (!bspwmbar_init(xcb, scr)) {
 		err("bspwmbar_init(): Failed to init bspwmbar\n");
 		goto CLEANUP;
 	}
