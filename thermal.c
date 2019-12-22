@@ -10,7 +10,7 @@
 #include "util.h"
 
 void
-thermal(DC dc, Option opts)
+thermal(draw_context_t *dc, module_option_t *opts)
 {
 	static time_t prevtime;
 	static unsigned long temp;

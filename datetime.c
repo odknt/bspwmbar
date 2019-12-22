@@ -13,7 +13,7 @@
 #include "util.h"
 
 void
-datetime(DC dc, Option opts)
+datetime(draw_context_t *dc, module_option_t *opts)
 {
 	time_t timer = time(NULL);
 	struct tm *tptr = localtime(&timer);

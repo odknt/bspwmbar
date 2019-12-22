@@ -25,10 +25,11 @@ Currently required [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
 - [x] Implements clickable label
 - [x] System Tray support
 - [x] Refactor code
+- [x] Emoji support (with color)
+- [x] Ligature support
 - [x] OpenBSD support
 - [ ] FreeBSD support
 - [ ] Pulseaudio support (The priority is low because pulseaudio has alsa interface)
-- [ ] Decrease memory usage
 
 ## Configure
 

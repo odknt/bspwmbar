@@ -147,10 +147,10 @@ cpu_perc(double **cores)
 }
 
 void
-cpugraph(DC dc, Option opts)
+cpugraph(draw_context_t *dc, module_option_t *opts)
 {
-	Color fgcols[4];
-	Color bgcol;
+	color_t *fgcols[4];
+	color_t *bgcol;
 	double *vals = NULL;
 	int i, ncore = cpu_perc(&vals);
 
@@ -162,7 +162,7 @@ cpugraph(DC dc, Option opts)
 			fgcols[i] = color_load(deffgcols[i]);
 	}
 
-	GraphItem *items = (GraphItem *)alloca(sizeof(GraphItem) * ncore);
+	graph_item_t *items = (graph_item_t *)alloca(sizeof(graph_item_t) * ncore);
 	for (int i = 0; i < ncore; i++) {
 		items[i].bg = bgcol;
 		items[i].val = vals[i];

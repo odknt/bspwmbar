@@ -3,36 +3,33 @@
 #ifndef SYSTRAY_H_
 #define SYSTRAY_H_
 
-#include <X11/Xlib.h>
+#include <xcb/xcb.h>
 
 #include "util.h"
 
 typedef struct {
 	unsigned long version;
 	unsigned long flags;
-} XEmbedInfo;
+} xembed_info_t;
 
-typedef struct _TrayItem {
-	Window win;
-	XEmbedInfo info;
+typedef struct _systray_item_t {
+	xcb_window_t win;
+	xembed_info_t info;
 	int x;
 
 	list_head head;
-} TrayItem;
+} systray_item_t;
 
-/**
- * SystemTray - An opaque pointer for struct _SystemTray.
- */
-typedef struct _SystemTray *SystemTray;
+typedef struct _systray_t systray_t;
 
-SystemTray systray_new(Display *, Window);
-int systray_handle(SystemTray, XEvent);
-void systray_destroy(SystemTray);
-void systray_remove_item(SystemTray, Window);
-Window systray_get_window(SystemTray);
-Display *systray_get_display(SystemTray);
-list_head *systray_get_items(SystemTray);
-int systray_icon_size(SystemTray);
-void systray_set_icon_size(SystemTray, int);
+systray_t *systray_new(xcb_connection_t *, xcb_screen_t *, xcb_window_t);
+int systray_handle(systray_t *, xcb_generic_event_t *);
+void systray_destroy(systray_t *);
+void systray_remove_item(systray_t *, xcb_window_t);
+xcb_window_t systray_get_window(systray_t *);
+xcb_connection_t *systray_get_connection(systray_t *);
+list_head *systray_get_items(systray_t *);
+int systray_icon_size(systray_t *);
+void systray_set_icon_size(systray_t *, int);
 
 #endif /* SYSTRAY_H_ */

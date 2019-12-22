@@ -35,7 +35,7 @@ disk_perc(const char *mpoint)
 }
 
 void
-filesystem(DC dc, Option opts)
+filesystem(draw_context_t *dc, module_option_t *opts)
 {
 	int perc = disk_perc(opts->fs.mountpoint);
 	if (!opts->fs.prefix)

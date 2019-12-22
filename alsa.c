@@ -2,7 +2,7 @@
 
 #include <alloca.h>
 #include <alsa/asoundlib.h>
-#include <X11/Xlib.h>
+#include <xcb/xcb.h>
 
 #include "bspwmbar.h"
 
@@ -19,13 +19,13 @@ typedef struct {
 	long max, min;
 	long oneper;
 	int  has_switch;
-} AlsaInfo;
+} alsa_info_t;
 
 static snd_ctl_t *ctl;
 static snd_mixer_t *mixer;
 static int initialized = 0;
-static AlsaInfo info = { 0 };
-static PollFD pfd = { 0 };
+static alsa_info_t info = { 0 };
+static poll_fd_t pfd = { 0 };
 
 /* functions */
 static void get_info(snd_mixer_elem_t *);
@@ -34,7 +34,7 @@ static void set_volume(snd_mixer_elem_t *, long);
 static void alsa_control(uint8_t);
 static int alsa_connect();
 static int alsa_disconnect();
-static PollResult alsa_update(int);
+static poll_result_t alsa_update(int);
 
 void
 get_info(snd_mixer_elem_t *elem)
@@ -129,7 +129,7 @@ alsa_connect()
 	return pfds->fd;
 }
 
-PollResult
+poll_result_t
 alsa_update(int fd)
 {
 	(void)fd;
@@ -169,7 +169,7 @@ alsa_init()
 }
 
 void
-volume(DC dc, Option opts)
+volume(draw_context_t *dc, module_option_t *opts)
 {
 	if (!pfd.fd)
 		alsa_init();
@@ -190,18 +190,20 @@ volume(DC dc, Option opts)
 }
 
 void
-volume_ev(XEvent ev)
+volume_ev(xcb_generic_event_t *ev)
 {
-	switch (ev.type) {
-	case ButtonPress:
-		switch (ev.xbutton.button) {
-		case Button1:
+	xcb_button_press_event_t *button;
+	switch (ev->response_type & ~0x80) {
+	case XCB_BUTTON_PRESS:
+		button = (xcb_button_press_event_t *)ev;
+		switch (button->detail) {
+		case XCB_BUTTON_INDEX_1:
 			alsa_control(ALSACTL_TOGGLE_MUTE);
 			break;
-		case Button4:
+		case XCB_BUTTON_INDEX_4:
 			alsa_control(ALSACTL_VOLUME_UP);
 			break;
-		case Button5:
+		case XCB_BUTTON_INDEX_5:
 			alsa_control(ALSACTL_VOLUME_DOWN);
 			break;
 		}
