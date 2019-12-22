@@ -1558,7 +1558,7 @@ timer_reset(int fd)
 poll_result_t
 bspwm_handle(int fd)
 {
-	size_t len;
+	ssize_t len;
 	xcb_window_t win;
 	xcb_change_window_attributes_value_list_t attrs;
 	uint32_t mask = XCB_CW_EVENT_MASK;
@@ -1576,7 +1576,7 @@ bspwm_handle(int fd)
 			xcb_change_window_attributes_aux(bar.xcb, win, mask, &attrs);
 		return PR_UPDATE;
 	}
-	return PR_NOOP;
+	return PR_FAILED;
 }
 
 /**
@@ -1719,6 +1719,9 @@ poll_loop(void (* handler)())
 				poll_del(pollfd);
 				pollfd->fd = pollfd->init();
 				poll_add(pollfd);
+				break;
+			case PR_FAILED:
+				poll_stop();
 				break;
 			}
 		}
