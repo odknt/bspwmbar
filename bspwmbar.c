@@ -63,7 +63,7 @@
 /* convert color for cairo */
 #define CONVCOL(x) (double)((x) / 255.0)
 /* check event and returns true if target is the label */
-#define IS_LABEL_EVENT(l,e) (((l).x < (e)->event_x) && ((l).x + (l).width))
+#define IS_LABEL_EVENT(l,e) (((l).x < (e)->event_x) && ((e)->event_x < (l).x + (l).width))
 
 struct _color_t {
 	char *name;
@@ -1158,13 +1158,12 @@ render_label(draw_context_t *dc)
 
 		dc->align = dc->labels[j].align;
 		dc->labels[j].option->any.func(dc, dc->labels[j].option);
-		if (dc->align == DA_LEFT)
+		if (dc->align == DA_LEFT) {
 			width = dc_get_x(dc) - x;
-		else if (dc->align == DA_RIGHT)
+		} else if (dc->align == DA_RIGHT) {
 			width = x - dc_get_x(dc);
-		x = dc_get_x(dc);
-		if (width)
-			width += celwidth;
+			x = dc_get_x(dc);
+		}
 		dc->labels[j].width = width;
 		dc->labels[j].x = x;
 	}
