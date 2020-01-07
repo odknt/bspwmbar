@@ -13,8 +13,6 @@
 #endif
 
 /* common libraries */
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <locale.h>
 #include <signal.h>
 #include <stdint.h>
@@ -49,6 +47,7 @@
 
 /* local headers */
 #include "bspwmbar.h"
+#include "bspwm.h"
 #include "systray.h"
 #include "config.h"
 
@@ -56,8 +55,6 @@
 # define VERSION "v0.0.0-dev"
 #endif
 
-/* bspwm commands */
-#define SUBSCRIBE_REPORT "subscribe\0report"
 /* epoll max events */
 #define MAX_EVENTS 10
 /* convert color for cairo */
@@ -86,16 +83,9 @@ typedef struct {
 
 static glyph_font_spec_t glyph_caches[1024];
 
-typedef enum {
-	DA_RIGHT = 0,
-	DA_LEFT,
-	/* currently not supported the below */
-	DA_CENTER
-} draw_align_t;
-
 typedef struct {
 	module_option_t *option;
-	draw_align_t align;
+	draw_context_align_t align;
 	color_t fg, bg;
 
 	int x, width;
@@ -125,19 +115,19 @@ typedef struct {
 
 typedef struct {
 	xcb_window_t win;
-	monitor_t monitor;
 
 	int x, y, width, height;
 } window_t;
 
 struct _draw_context_t {
 	window_t xbar;
+	char monitor_name[NAME_MAXSZ];
 
 	xcb_visualtype_t *visual;
 	xcb_gcontext_t gc;
 	xcb_drawable_t buf;
 	xcb_shm_segment_info_t shm_info;
-	draw_align_t align;
+	draw_context_align_t align;
 	cairo_t *cr;
 
 	int left_x, right_x;
@@ -147,9 +137,6 @@ struct _draw_context_t {
 };
 
 typedef struct {
-	/* bspwm socket fd */
-	int fd;
-
 	/* xcb resources */
 	xcb_connection_t *xcb;
 	xcb_screen_t *scr;
@@ -173,7 +160,7 @@ typedef struct {
 
 static bspwmbar_t bar;
 static systray_t *tray;
-static poll_fd_t bfd, xfd;
+static poll_fd_t xfd;
 #if defined(__linux)
 static poll_fd_t timer;
 #endif
@@ -229,10 +216,6 @@ static void draw_padding(draw_context_t *, int);
 static void draw_string(draw_context_t *, color_t *, const char *);
 static void draw_glyphs(draw_context_t *, color_t *, const glyph_font_spec_t *, int nglyph);
 static void render_label(draw_context_t *);
-static int bspwm_connect();
-static int bspwm_send(char *, int);
-static void bspwm_parse(char *);
-static desktop_state_t bspwm_desktop_state(char);
 static void windowtitle_update(xcb_connection_t *, uint8_t);
 static void render();
 static int get_baseline();
@@ -241,7 +224,6 @@ static void bspwmbar_destroy();
 static void poll_init();
 static void poll_loop(void (*)());
 static void poll_stop();
-static poll_result_t bspwm_handle(int);
 static poll_result_t xev_handle();
 #if defined(__linux)
 static poll_result_t timer_reset(int);
@@ -348,29 +330,6 @@ color_t *
 color_default_bg()
 {
 	return bar.bg;
-}
-
-/**
- * bspwm_desktop_state() - parse char to bspwm desktop state.
- * @s: desktop state char.
- *
- * Retrun: DesktopState
- * 'o'         - STATE_OCCUPIED
- * 'u'         - STATE_URGENT
- * 'F','U','O' - STATE_ACTIVE
- * not match   - STATE_FREE
- */
-desktop_state_t
-bspwm_desktop_state(char s)
-{
-	desktop_state_t state = STATE_FREE;
-	if ((s | 0x20) == 'o')
-		state = STATE_OCCUPIED;
-	if ((s | 0x20) == 'u')
-		state = STATE_URGENT;
-	if (s == 'F' || s == 'U' || s == 'O')
-		return state | STATE_ACTIVE;
-	return state;
 }
 
 /**
@@ -571,7 +530,18 @@ dc_free(draw_context_t dc)
 	xcb_free_pixmap(bar.xcb, dc.buf);
 	xcb_destroy_window(bar.xcb, dc.xbar.win);
 	cairo_destroy(dc.cr);
-	free(dc.xbar.monitor.desktops);
+}
+
+const char *
+draw_context_monitor_name(draw_context_t *dc)
+{
+	return dc->monitor_name;
+}
+
+draw_context_align_t
+draw_context_align(draw_context_t *dc)
+{
+	return dc->align;
 }
 
 /**
@@ -1013,6 +983,20 @@ draw_glyphs(draw_context_t *dc, color_t *color, const glyph_font_spec_t *specs, 
 }
 
 /**
+ * draw_color_text() - render text with color.
+ * @dc: draw context.
+ * @col: rendering color.
+ * @str: rendering text.
+ */
+void
+draw_color_text(draw_context_t *dc, color_t *col, const char *str)
+{
+	draw_padding(dc, celwidth);
+	draw_string(dc, col, str);
+	draw_padding(dc, celwidth);
+}
+
+/**
  * draw_text() - render text.
  * @dc: draw context.
  * @str: rendering text.
@@ -1020,9 +1004,7 @@ draw_glyphs(draw_context_t *dc, color_t *color, const glyph_font_spec_t *specs, 
 void
 draw_text(draw_context_t *dc, const char *str)
 {
-	draw_padding(dc, celwidth);
-	draw_string(dc, bar.fg, str);
-	draw_padding(dc, celwidth);
+	draw_color_text(dc, bar.fg, str);
 }
 
 /**
@@ -1066,67 +1048,6 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 	}
 	if (dc->align == DA_LEFT)
 		dc_move_x(dc, width);
-}
-
-/**
- * bspwm_parse() - parse bspwm reported string.
- * @report: bspwm reported string.
- */
-void
-bspwm_parse(char *report)
-{
-	int i, j, name_len, nws = 0;
-	int len = strlen(report);
-	char tok, name[NAME_MAXSZ];
-	monitor_t *curmon = NULL;
-
-	for (i = 0; i < len; i++) {
-		switch (tok = report[i]) {
-		case 'M':
-		case 'm':
-			nws = 0;
-			for (j = ++i; j < len; j++)
-				if (report[j] == ':')
-					break;
-			name_len = SMALLER(j - i, NAME_MAXSZ - 1);
-			strncpy(name, &report[i], name_len);
-			name[name_len] = '\0';
-			i = j;
-			for (j = 0; j < bar.ndc; j++)
-				if (!strncmp(bar.dcs[j].xbar.monitor.name, name, strlen(name)))
-					curmon = &bar.dcs[j].xbar.monitor;
-			if (curmon)
-				curmon->is_active = (tok == 'M') ? 1 : 0;
-			break;
-		case 'o':
-		case 'O':
-		case 'f':
-		case 'F':
-		case 'u':
-		case 'U':
-			for (j = ++i; j < len; j++)
-				if (report[j] == ':')
-					break;
-			if (nws + 1 >= curmon->cdesktop) {
-				curmon->cdesktop += 5;
-				curmon->desktops = realloc(curmon->desktops, sizeof(desktop_t) * curmon->cdesktop);
-			}
-			curmon->desktops[nws++].state = bspwm_desktop_state(tok);
-			i = j;
-			break;
-		case 'L':
-		case 'T':
-			i++; /* skip next char. */
-			break;
-		case 'G':
-			if (curmon)
-				curmon->ndesktop = nws;
-			/* skip current node flags. */
-			while (report[i + 1] != ':' && report[i + 1] != '\n')
-				i++;
-			break;
-		}
-	}
 }
 
 /**
@@ -1215,38 +1136,6 @@ render()
 }
 
 /**
- * bspwm_connect() - connect to bspwm socket.
- *
- * Return: file descripter or -1.
- */
-int
-bspwm_connect()
-{
-	struct sockaddr_un sock;
-	int fd, dpyno = 0, scrno = 0;
-	char *sp = NULL;
-
-	sock.sun_family = AF_UNIX;
-	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-		return -1;
-
-	sp = getenv("BSPWM_SOCKET");
-	if (sp) {
-		snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", sp);
-	} else {
-		if (xcb_parse_display(NULL, &sp, &dpyno, &scrno))
-			snprintf(sock.sun_path, sizeof(sock.sun_path),
-			         "/tmp/bspwm%s_%i_%i-socket", sp, dpyno, scrno);
-		free(sp);
-	}
-
-	if (connect(fd, (struct sockaddr *)&sock, sizeof(sock)) == -1)
-		return -1;
-
-	return fd;
-}
-
-/**
  * bspwmbar_init() - initialize bspwmbar.
  * @dpy: display pointer.
  * @scr: screen number.
@@ -1264,12 +1153,6 @@ bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 	xcb_randr_output_t *outputs;
 	xcb_randr_get_crtc_info_reply_t *crtc_reply;
 	int i, nmon = 0;
-
-	/* connect bspwm socket */
-	if ((bar.fd = bspwm_connect()) == -1) {
-		err("bspwm_connect(): Failed to connect to the socket\n");
-		return 1;
-	}
 
 	/* initialize */
 	bar.xcb = xcb;
@@ -1291,7 +1174,7 @@ bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 		if (info_reply->crtc != XCB_NONE) {
 			crtc_reply = xcb_randr_get_crtc_info_reply(xcb, xcb_randr_get_crtc_info(xcb, info_reply->crtc, XCB_TIME_CURRENT_TIME), NULL);
 			if (dc_init(&bar.dcs[nmon], xcb, scr, crtc_reply->x, crtc_reply->y, crtc_reply->width, BAR_HEIGHT))
-				strncpy(bar.dcs[nmon++].xbar.monitor.name, (const char *)xcb_randr_get_output_info_name(info_reply), NAME_MAXSZ);
+				strncpy(bar.dcs[nmon++].monitor_name, (const char *)xcb_randr_get_output_info_name(info_reply), NAME_MAXSZ);
 			free(crtc_reply);
 		}
 		free(info_reply);
@@ -1364,49 +1247,6 @@ bspwmbar_destroy()
 	for (i = 0; i < bar.ndc; i++)
 		dc_free(bar.dcs[i]);
 	free(bar.dcs);
-}
-
-/**
- * bspwm_send() - send specified command to bspwm.
- * @cmd: bspwm command.
- * @len: length of cmd.
- *
- * Return: sent bytes length.
- */
-int
-bspwm_send(char *cmd, int len)
-{
-	return send(bar.fd, cmd, len, 0);
-}
-
-/**
- * desktops() - render bspwm desktop states.
- * @dc: draw context.
- * @opts: module options.
- */
-void
-desktops(draw_context_t *dc, module_option_t *opts)
-{
-	static color_t *fg = NULL, *altfg = NULL;
-	color_t *col;
-	const char *ws;
-	int cur, max = dc->xbar.monitor.ndesktop;
-
-	if (!fg)
-		fg = color_load(FGCOLOR);
-	if (!altfg)
-		altfg = color_load(ALTFGCOLOR);
-
-	draw_padding(dc, celwidth);
-	for (int i = 0, j = max - 1; i < max; i++, j--) {
-		cur = (dc->align == DA_RIGHT) ? j : i;
-		draw_padding(dc, celwidth / 2.0 + 0.5);
-		ws = (dc->xbar.monitor.desktops[cur].state & STATE_ACTIVE) ? opts->desk.active : opts->desk.inactive;
-		col = (dc->xbar.monitor.desktops[cur].state == STATE_FREE) ? altfg : fg;
-		draw_string(dc, col, ws);
-		draw_padding(dc, celwidth / 2.0 + 0.5);
-	}
-	draw_padding(dc, celwidth);
 }
 
 /**
@@ -1542,43 +1382,6 @@ timer_reset(int fd)
 
 #endif
 /**
- * bspwm_handle() - bspwm event handling function.
- * @fd: a file descriptor for bspwm socket.
- *
- * This function expects call after bspwm_connect().
- * Read and parse bspwm report from fd.
- *
- * Return: PollResult
- *
- * success and not need more action - PR_NOOP
- * success and need rerendering     - PR_UPDATE
- * failed to read from fd           - PR_FAILED
- */
-poll_result_t
-bspwm_handle(int fd)
-{
-	ssize_t len;
-	xcb_window_t win;
-	xcb_change_window_attributes_value_list_t attrs;
-	uint32_t mask = XCB_CW_EVENT_MASK;
-
-	attrs.event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
-
-	if ((len = recv(fd, buf, sizeof(buf) - 1, 0)) > 0) {
-		buf[len] = '\0';
-		if (buf[0] == '\x07') {
-			err("bspwm: %s", buf + 1);
-			return PR_FAILED;
-		}
-		bspwm_parse(buf);
-		if ((win = get_active_window(0)))
-			xcb_change_window_attributes_aux(bar.xcb, win, mask, &attrs);
-		return PR_UPDATE;
-	}
-	return PR_FAILED;
-}
-
-/**
  * is_change_active_window_event() - check the event is change active window.
  *
  * ev: xcb_generic_event_t
@@ -1607,6 +1410,10 @@ xev_handle()
 	xcb_window_t win;
 	poll_result_t res = PR_NOOP;
 	draw_context_t *dc;
+
+	xcb_change_window_attributes_value_list_t attrs;
+	uint32_t mask = XCB_CW_EVENT_MASK;
+	attrs.event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
 
 	/* for X11 events */
 	while ((event = xcb_poll_for_event(bar.xcb))) {
@@ -1644,6 +1451,8 @@ xev_handle()
 				windowtitle_update(bar.xcb, 0);
 				res = PR_UPDATE;
 			}
+			if (is_change_active_window_event(prop) && (win = get_active_window(0)))
+				xcb_change_window_attributes_aux(bar.xcb, win, mask, &attrs);
 			break;
 		case XCB_CLIENT_MESSAGE:
 			systray_handle(tray, event);
@@ -1811,12 +1620,6 @@ run()
 		goto CLEANUP;
 	}
 
-	/* subscribe bspwm report */
-	if (bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1) {
-		err("bspwm_send(): Failed to send command to bspwm\n");
-		goto CLEANUP;
-	}
-
 	/* tray initialize */
 	if (!(tray = systray_new(xcb, scr, bar.dcs[0].xbar.win))) {
 		err("systray_new(): Selection already owned by other window\n");
@@ -1835,11 +1638,6 @@ run()
 		goto CLEANUP;
 	}
 #endif
-
-	/* polling bspwm report */
-	bfd.fd = bar.fd;
-	bfd.handler = bspwm_handle;
-	poll_add(&bfd);
 
 	/* wait PropertyNotify events of root window */
 	attrs.event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE;

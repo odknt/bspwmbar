@@ -7,6 +7,7 @@
 #include <xcb/xcb_event.h>
 
 #include "util.h"
+#include "bspwm.h"
 
 typedef enum {
 	PR_NOOP   =  0,
@@ -66,8 +67,10 @@ typedef struct {
 typedef struct {
 	MODULE_BASE;
 
-	char *active;
-	char *inactive;
+	char *focused;
+	char *unfocused;
+	char *fg;
+	char *fg_free;
 } module_desktop_t;
 
 typedef struct {
@@ -136,7 +139,18 @@ color_t *color_load(const char *);
 color_t *color_default_fg();
 color_t *color_default_bg();
 
+typedef enum {
+	DA_RIGHT = 0,
+	DA_LEFT,
+	/* currently not supported the below */
+	DA_CENTER
+} draw_context_align_t;
+
+const char *draw_context_monitor_name(draw_context_t *);
+draw_context_align_t draw_context_align(draw_context_t *);
+
 void draw_text(draw_context_t *, const char *);
+void draw_color_text(draw_context_t *, color_t *, const char *);
 void draw_bargraph(draw_context_t *, const char *, graph_item_t *, int);
 
 /* handler */
