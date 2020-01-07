@@ -1257,7 +1257,7 @@ bspwmbar_destroy()
 void
 systray(draw_context_t *dc, module_option_t *opts)
 {
-	list_head *pos;
+	list_head *pos, *base;
 	int x;
 	xcb_configure_window_value_list_t values;
 	uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
@@ -1274,7 +1274,8 @@ systray(draw_context_t *dc, module_option_t *opts)
 
 	draw_padding(dc, celwidth);
 
-	list_for_each(systray_get_items(tray), pos) {
+	base = systray_get_items(tray);
+	list_for_each(base, pos) {
 		systray_item_t *item = list_entry(pos, systray_item_t, head);
 		if (!item->info.flags)
 			continue;
@@ -1288,7 +1289,8 @@ systray(draw_context_t *dc, module_option_t *opts)
 			if (!xcb_request_check(bar.xcb, xcb_configure_window_aux(bar.xcb, item->win, mask, &values)))
 				item->x = x;
 		}
-		draw_padding(dc, celwidth);
+		if (base != pos->next)
+			draw_padding(dc, celwidth);
 	}
 	draw_padding(dc, celwidth);
 }
