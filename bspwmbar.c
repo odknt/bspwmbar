@@ -85,7 +85,6 @@ static glyph_font_spec_t glyph_caches[1024];
 
 typedef struct {
 	module_option_t *option;
-	draw_context_align_t align;
 	color_t fg, bg;
 
 	int x, width;
@@ -126,14 +125,14 @@ struct _draw_context_t {
 	xcb_visualtype_t *visual;
 	xcb_gcontext_t gc;
 	xcb_drawable_t buf;
+	xcb_drawable_t tmp;
 	xcb_shm_segment_info_t shm_info;
-	draw_context_align_t align;
 	cairo_t *cr;
 
-	int left_x, right_x;
+	int x, width;
 
-	label_t labels[LENGTH(left_modules) + LENGTH(right_modules)];
-	int nlabel;
+	label_t left_labels[LENGTH(left_modules)];
+	label_t right_labels[LENGTH(right_modules)];
 };
 
 typedef struct {
@@ -215,8 +214,10 @@ static void dc_calc_render_pos(draw_context_t *, glyph_font_spec_t *, int);
 static void draw_padding(draw_context_t *, int);
 static void draw_string(draw_context_t *, color_t *, const char *);
 static void draw_glyphs(draw_context_t *, color_t *, const glyph_font_spec_t *, int nglyph);
-static void render_label(draw_context_t *);
+static void render_labels(draw_context_t *, label_t *, size_t);
 static void windowtitle_update(xcb_connection_t *, uint8_t);
+static void calculate_systray_item_positions(label_t *, module_option_t *);
+static void calculate_label_positions(draw_context_t *, label_t *, size_t, int);
 static void render();
 static int get_baseline();
 static bool bspwmbar_init(xcb_connection_t *, xcb_screen_t *);
@@ -467,18 +468,22 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 
 	/* create graphic context */
 	dc->buf = xcb_generate_id(xcb);
+	dc->tmp = xcb_generate_id(xcb);
 	dc->visual = xcb_visualtype_get(scr);
 
 	/* create pixmap image for rendering */
-	if (xcb_shm_support(xcb))
+	if (xcb_shm_support(xcb)) {
 		xcb_create_pixmap_with_shm(xcb, scr, dc->buf, width, height, &dc->shm_info);
-	else
+		xcb_create_pixmap_with_shm(xcb, scr, dc->tmp, width, height, &dc->shm_info);
+	} else {
 		xcb_create_pixmap(xcb, scr->root_depth, dc->buf, scr->root, width, height);
+		xcb_create_pixmap(xcb, scr->root_depth, dc->tmp, scr->root, width, height);
+	}
 
 	/* create cairo context */
 	pict_reply = xcb_render_query_pict_formats_reply(xcb, xcb_render_query_pict_formats(xcb), NULL);
 	formats = xcb_render_util_find_standard_format(pict_reply, XCB_PICT_STANDARD_RGB_24);
-	surface = cairo_xcb_surface_create_with_xrender_format(xcb, scr, dc->buf, formats, width, height);
+	surface = cairo_xcb_surface_create_with_xrender_format(xcb, scr, dc->tmp, formats, width, height);
 	dc->cr = cairo_create(surface);
 	cairo_set_operator(dc->cr, CAIRO_OPERATOR_SOURCE);
 	cairo_set_source_surface(dc->cr, surface, 0, 0);
@@ -488,23 +493,17 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 	/* create gc */
 	gcv.graphics_exposures = 1;
 	dc->gc = xcb_generate_id(xcb);
-	xcb_create_gc_aux(xcb, dc->gc, dc->buf, XCB_GC_GRAPHICS_EXPOSURES, &gcv);
+	xcb_create_gc_aux(xcb, dc->gc, dc->tmp, XCB_GC_GRAPHICS_EXPOSURES, &gcv);
 
 	/* set class hint */
 	xcb_change_property(xcb, XCB_PROP_MODE_REPLACE, xw->win, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 8, "bspwmbar");
 	xcb_change_property(xcb, XCB_PROP_MODE_REPLACE, xw->win, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, 17, "bspwmbar\0bspwmbar");
 
 	/* create labels from modules */
-	dc->nlabel = LENGTH(left_modules) + LENGTH(right_modules);
-	for (i = 0; i < (int)LENGTH(left_modules); i++) {
-		dc->labels[i].align = DA_LEFT;
-		dc->labels[i].option = &left_modules[i];
-	}
-	int rmlen = LENGTH(right_modules), nlabel = i;
-	for (i = rmlen - 1; i >= 0; i--, nlabel++) {
-		dc->labels[nlabel].align = DA_RIGHT;
-		dc->labels[nlabel].option = &right_modules[i];
-	}
+	for (i = 0; i < (int)LENGTH(left_modules); i++)
+		dc->left_labels[i].option = &left_modules[i];
+	for (i = 0; i < (int)LENGTH(right_modules); i++)
+		dc->right_labels[i].option = &right_modules[i];
 
 	/* send window rendering request */
 	winconf.stack_mode = XCB_STACK_MODE_BELOW;
@@ -528,6 +527,7 @@ dc_free(draw_context_t dc)
 		shmdt(dc.shm_info.shmaddr);
 	}
 	xcb_free_pixmap(bar.xcb, dc.buf);
+	xcb_free_pixmap(bar.xcb, dc.tmp);
 	xcb_destroy_window(bar.xcb, dc.xbar.win);
 	cairo_destroy(dc.cr);
 }
@@ -536,12 +536,6 @@ const char *
 draw_context_monitor_name(draw_context_t *dc)
 {
 	return dc->monitor_name;
-}
-
-draw_context_align_t
-draw_context_align(draw_context_t *dc)
-{
-	return dc->align;
 }
 
 /**
@@ -553,9 +547,7 @@ draw_context_align(draw_context_t *dc)
 int
 dc_get_x(draw_context_t *dc)
 {
-	if (dc->align == DA_LEFT)
-		return dc->left_x;
-	return dc->xbar.width - dc->right_x;
+	return dc->x;
 }
 
 /**
@@ -566,10 +558,7 @@ dc_get_x(draw_context_t *dc)
 void
 dc_move_x(draw_context_t *dc, int x)
 {
-	if (dc->align == DA_LEFT)
-		dc->left_x += x;
-	else if (dc->align == DA_RIGHT)
-		dc->right_x += x;
+	dc->x += x;
 }
 
 /**
@@ -926,16 +915,7 @@ load_glyphs(draw_context_t *dc, const char *str, glyph_font_spec_t *glyphs, int 
 void
 draw_padding(draw_context_t *dc, int num)
 {
-	switch ((int)dc->align) {
-	case DA_LEFT:
-		dc->left_x += num;
-		break;
-	case DA_RIGHT:
-		if (!dc->right_x)
-			num += celwidth;
-		dc->right_x += num;
-		break;
-	}
+	dc->x += num;
 }
 
 /**
@@ -949,12 +929,9 @@ draw_string(draw_context_t *dc, color_t *color, const char *str)
 {
 	int width;
 	size_t nglyph = load_glyphs(dc, str, glyph_caches, sizeof(glyph_caches), &width);
-	if (dc->align == DA_RIGHT)
-		dc_move_x(dc, width);
 	dc_calc_render_pos(dc, glyph_caches, nglyph);
 	draw_glyphs(dc, color, glyph_caches, nglyph);
-	if (dc->align == DA_LEFT)
-		dc_move_x(dc, width);
+	dc_move_x(dc, width);
 }
 
 /**
@@ -1021,10 +998,8 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 
 	draw_padding(dc, celwidth);
 	int width = (celwidth + 1) * nitem;
-	if (dc->align == DA_RIGHT)
-		dc->right_x += width;
-	int x = dc_get_x(dc) + celwidth;
 	draw_string(dc, bar.fg, label);
+	int x = dc_get_x(dc) + celwidth;
 	draw_padding(dc, celwidth);
 	for (int i = 0; i < nitem; i++) {
 		xcb_gc_color(bar.xcb, dc->gc, items[i].bg);
@@ -1032,7 +1007,7 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 		rect.y = graph_basey;
 		rect.width = celwidth;
 		rect.height = graph_maxh;
-		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp, dc->gc, 1, &rect);
 
 		if (items[i].val < 0)
 			goto CONTINUE;
@@ -1042,12 +1017,11 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 		rect.height = SMALLER(BIGGER(graph_maxh * items[i].val, 1), graph_maxh);;
 		rect.x = x - celwidth;
 		rect.y = graph_basey + (graph_maxh - rect.height);
-		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp, dc->gc, 1, &rect);
 	CONTINUE:
 		x += celwidth + 1;
 	}
-	if (dc->align == DA_LEFT)
-		dc_move_x(dc, width);
+	dc_move_x(dc, width);
 }
 
 /**
@@ -1067,26 +1041,24 @@ text(draw_context_t *dc, module_option_t *opts)
 }
 
 /**
- * render_label() - render all labels
+ * render_labels() - render all labels
  * @dc: DC.
+ * @labels: label_t array.
+ * @nlabel: length of labels.
  */
 void
-render_label(draw_context_t *dc)
+render_labels(draw_context_t *dc, label_t *labels, size_t nlabel)
 {
-	int x = 0, width = 0;
-	for (int j = 0; j < dc->nlabel; j++) {
-		x = dc_get_x(dc); width = 0;
+	size_t i;
+	int x = 0;
 
-		dc->align = dc->labels[j].align;
-		dc->labels[j].option->any.func(dc, dc->labels[j].option);
-		if (dc->align == DA_LEFT) {
-			width = dc_get_x(dc) - x;
-		} else if (dc->align == DA_RIGHT) {
-			width = x - dc_get_x(dc);
-			x = dc_get_x(dc);
-		}
-		dc->labels[j].width = width;
-		dc->labels[j].x = x;
+	for (i = 0; i < nlabel; i++) {
+		x = dc_get_x(dc);
+
+		labels[i].option->any.func(dc, labels[i].option);
+		labels[i].width = dc_get_x(dc) - x;
+		labels[i].x = x;
+		dc->width += labels[i].width;
 	}
 }
 
@@ -1104,6 +1076,63 @@ xcb_gc_color(xcb_connection_t *xcb, xcb_gcontext_t gc, color_t *color)
 }
 
 /**
+ * calculate_systray_item_positions() - calculate position of tray items.
+ * @label: the label must has been made from systray module.
+ * @opts: module option.
+ */
+void
+calculate_systray_item_positions(label_t *label, module_option_t *opts)
+{
+	xcb_configure_window_value_list_t values;
+	uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
+	systray_item_t *item;
+	list_head *pos;
+	int x;
+
+	if (!systray_icon_size(tray))
+		systray_set_icon_size(tray, opts->tray.iconsize);
+
+	if (list_empty(systray_get_items(tray)))
+		return;
+
+	/* fix the position for padding */
+	x = label->x + celwidth;
+	list_for_each(systray_get_items(tray), pos) {
+		item = list_entry(pos, systray_item_t, head);
+		if (!item->info.flags)
+			continue;
+		if (item->x != x) {
+			values.x = x;
+			values.y = (BAR_HEIGHT - opts->tray.iconsize) / 2;
+			values.width = opts->tray.iconsize;
+			values.height = opts->tray.iconsize;
+			if (!xcb_request_check(bar.xcb, xcb_configure_window_aux(bar.xcb, item->win, mask, &values)))
+				item->x = x;
+		}
+		x += opts->tray.iconsize + celwidth;
+	}
+}
+
+/**
+ * calculate_label_positions() - calculate position of labels.
+ * @dc: draw_context_t
+ * @labels: label_t array.
+ * @nlabel: length of labels.
+ * @offset: position offset.
+ */
+void
+calculate_label_positions(draw_context_t *dc, label_t *labels, size_t nlabel, int offset)
+{
+	size_t i;
+	for (i = 0; i < nlabel; i++) {
+		labels[i].x += offset;
+
+		if (systray_get_window(tray) == dc->xbar.win && labels[i].option->any.func == systray)
+			calculate_systray_item_positions(&labels[i], labels[i].option);
+	}
+}
+
+/**
  * render() - rendering all modules.
  */
 void
@@ -1112,12 +1141,10 @@ render()
 	draw_context_t *dc;
 	window_t *xw;
 	xcb_rectangle_t rect = { 0 };
+	int i;
 
-	for (int i = 0; i < bar.ndc; i++) {
+	for (i = 0; i < bar.ndc; i++) {
 		dc = &bar.dcs[i];
-		dc->align = DA_LEFT;
-		dc->left_x = 0;
-		dc->right_x = 0;
 		xw = &dc->xbar;
 		rect.width = xw->width;
 		rect.height = xw->height;
@@ -1125,9 +1152,19 @@ render()
 		xcb_gc_color(bar.xcb, dc->gc, bar.bg);
 		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
 
-		/* render modules */
-		draw_padding(dc, celwidth);
-		render_label(dc);
+		/* render left modules */
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp, dc->gc, 1, &rect);
+		dc->x = dc->width = 0;
+		render_labels(dc, dc->left_labels, LENGTH(left_modules));
+		xcb_copy_area(bar.xcb, dc->tmp, dc->buf, dc->gc, 0, 0, celwidth, 0, dc->width, xw->height);
+		calculate_label_positions(dc, dc->left_labels, LENGTH(left_modules), celwidth);
+
+		/* render right modules */
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp, dc->gc, 1, &rect);
+		dc->x = dc->width = 0;
+		render_labels(dc, dc->right_labels, LENGTH(right_modules));
+		xcb_copy_area(bar.xcb, dc->tmp, dc->buf, dc->gc, 0, 0, xw->width - dc->width - celwidth, 0, dc->width, xw->height);
+		calculate_label_positions(dc, dc->right_labels, LENGTH(right_modules), xw->width - dc->width - celwidth);
 
 		/* copy pixmap to window */
 		xcb_copy_area(bar.xcb, dc->buf, xw->win, dc->gc, 0, 0, 0, 0, xw->width, xw->height);
@@ -1258,9 +1295,6 @@ void
 systray(draw_context_t *dc, module_option_t *opts)
 {
 	list_head *pos, *base;
-	int x;
-	xcb_configure_window_value_list_t values;
-	uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
 	(void)opts;
 
 	if (!systray_icon_size(tray))
@@ -1274,24 +1308,17 @@ systray(draw_context_t *dc, module_option_t *opts)
 
 	draw_padding(dc, celwidth);
 
+	/* render spaces for iconsize */
 	base = systray_get_items(tray);
 	list_for_each(base, pos) {
 		systray_item_t *item = list_entry(pos, systray_item_t, head);
 		if (!item->info.flags)
 			continue;
 		draw_padding(dc, opts->tray.iconsize);
-		x = dc_get_x(dc);
-		if (item->x != x) {
-			values.x = x;
-			values.y = (BAR_HEIGHT - opts->tray.iconsize) / 2;
-			values.width = opts->tray.iconsize;
-			values.height = opts->tray.iconsize;
-			if (!xcb_request_check(bar.xcb, xcb_configure_window_aux(bar.xcb, item->win, mask, &values)))
-				item->x = x;
-		}
 		if (base != pos->next)
 			draw_padding(dc, celwidth);
 	}
+
 	draw_padding(dc, celwidth);
 }
 
@@ -1396,6 +1423,30 @@ is_change_active_window_event(xcb_property_notify_event_t *ev)
 	return (ev->window == bar.scr->root) && (ev->atom == ewmh._NET_ACTIVE_WINDOW);
 }
 
+poll_result_t
+xcb_event_notify(xcb_generic_event_t *event, draw_context_t *dc)
+{
+	size_t i;
+	xcb_button_press_event_t *button = (xcb_button_press_event_t *)event;
+	for (i = 0; i < LENGTH(left_modules); i++) {
+		if (!dc->left_labels[i].option->any.handler)
+			continue;
+		if (IS_LABEL_EVENT(dc->left_labels[i], button)) {
+			dc->left_labels[i].option->any.handler(event);
+			return PR_UPDATE;
+		}
+	}
+	for (i = 0; i < LENGTH(right_modules); i++) {
+		if (!dc->right_labels[i].option->any.handler)
+			continue;
+		if (IS_LABEL_EVENT(dc->right_labels[i], button)) {
+			dc->right_labels[i].option->any.handler(event);
+			return PR_UPDATE;
+		}
+	}
+	return PR_NOOP;
+}
+
 /**
  * xev_handle() - X11 event handling
  *
@@ -1435,15 +1486,6 @@ xev_handle()
 			if (!dc)
 				break;
 			/* handle evnent */
-			for (int j = 0; j < dc->nlabel; j++) {
-				if (!dc->labels[j].option->any.handler)
-					continue;
-				if (IS_LABEL_EVENT(dc->labels[j], button)) {
-					dc->labels[j].option->any.handler(event);
-					res = PR_UPDATE;
-					break;
-				}
-			}
 			break;
 		case XCB_PROPERTY_NOTIFY:
 			prop = (xcb_property_notify_event_t *)event;

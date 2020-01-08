@@ -48,8 +48,8 @@ module_t left_modules[] = {
 	{ /* bspwm desktop state */
 		.desk = {
 			.func = desktops,
-			.active = "",
-			.inactive = "",
+			.focused = "",
+			.unfocused = "",
 		},
 	},
 	{ /* active window title */

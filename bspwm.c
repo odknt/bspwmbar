@@ -306,16 +306,8 @@ desktops(draw_context_t *dc, module_option_t *opts)
 	if (!mon)
 		return;
 
-	/* align right*/
-	if (draw_context_align(dc) == DA_RIGHT) {
-		list_for_each_reverse(&mon->desktops, cur) {
-			desktop = list_entry(cur, bspwm_desktop_t, head);
-			draw_desktop(dc, desktop, &opts->desk);
-		}
-	} else {
-		list_for_each(&mon->desktops, cur) {
-			desktop = list_entry(cur, bspwm_desktop_t, head);
-			draw_desktop(dc, desktop, &opts->desk);
-		}
+	list_for_each(&mon->desktops, cur) {
+		desktop = list_entry(cur, bspwm_desktop_t, head);
+		draw_desktop(dc, desktop, &opts->desk);
 	}
 }
