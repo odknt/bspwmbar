@@ -309,5 +309,7 @@ desktops(draw_context_t *dc, module_option_t *opts)
 	list_for_each(&mon->desktops, cur) {
 		desktop = list_entry(cur, bspwm_desktop_t, head);
 		draw_desktop(dc, desktop, &opts->desk);
+		if (&mon->desktops != cur->next)
+			draw_padding_em(dc, 1);
 	}
 }

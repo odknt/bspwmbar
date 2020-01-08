@@ -144,6 +144,7 @@ const char *draw_context_monitor_name(draw_context_t *);
 void draw_text(draw_context_t *, const char *);
 void draw_color_text(draw_context_t *, color_t *, const char *);
 void draw_bargraph(draw_context_t *, const char *, graph_item_t *, int);
+void draw_padding_em(draw_context_t *, double);
 
 /* handler */
 void volume_ev(xcb_generic_event_t *);

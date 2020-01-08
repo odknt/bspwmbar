@@ -212,7 +212,6 @@ static int dc_get_x(draw_context_t *);
 static void dc_move_x(draw_context_t *, int);
 static void dc_calc_render_pos(draw_context_t *, glyph_font_spec_t *, int);
 static void draw_padding(draw_context_t *, int);
-static void draw_string(draw_context_t *, color_t *, const char *);
 static void draw_glyphs(draw_context_t *, color_t *, const glyph_font_spec_t *, int nglyph);
 static void render_labels(draw_context_t *, label_t *, size_t);
 static void windowtitle_update(xcb_connection_t *, uint8_t);
@@ -908,7 +907,18 @@ load_glyphs(draw_context_t *dc, const char *str, glyph_font_spec_t *glyphs, int 
 }
 
 /**
- * draw_padding() - pender padding.
+ * draw_padding_em() - render padding by em units.
+ * @dc: DC.
+ * @num: padding width.
+ */
+void
+draw_padding_em(draw_context_t *dc, double em)
+{
+	draw_padding(dc, celwidth * em);
+}
+
+/**
+ * draw_padding() - render padding.
  * @dc: DC.
  * @num: padding width.
  */
@@ -919,13 +929,13 @@ draw_padding(draw_context_t *dc, int num)
 }
 
 /**
- * draw_string() - render string with the color.
+ * draw_color_text() - render text with color.
  * @dc: DC.
  * @color: rendering text color.
  * @str: rendering text.
  */
 void
-draw_string(draw_context_t *dc, color_t *color, const char *str)
+draw_color_text(draw_context_t *dc, color_t *color, const char *str)
 {
 	int width;
 	size_t nglyph = load_glyphs(dc, str, glyph_caches, sizeof(glyph_caches), &width);
@@ -960,20 +970,6 @@ draw_glyphs(draw_context_t *dc, color_t *color, const glyph_font_spec_t *specs, 
 }
 
 /**
- * draw_color_text() - render text with color.
- * @dc: draw context.
- * @col: rendering color.
- * @str: rendering text.
- */
-void
-draw_color_text(draw_context_t *dc, color_t *col, const char *str)
-{
-	draw_padding(dc, celwidth);
-	draw_string(dc, col, str);
-	draw_padding(dc, celwidth);
-}
-
-/**
  * draw_text() - render text.
  * @dc: draw context.
  * @str: rendering text.
@@ -996,11 +992,9 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 {
 	xcb_rectangle_t rect = { 0 };
 
-	draw_padding(dc, celwidth);
 	int width = (celwidth + 1) * nitem;
-	draw_string(dc, bar.fg, label);
+	draw_color_text(dc, bar.fg, label);
 	int x = dc_get_x(dc) + celwidth;
-	draw_padding(dc, celwidth);
 	for (int i = 0; i < nitem; i++) {
 		xcb_gc_color(bar.xcb, dc->gc, items[i].bg);
 		rect.x = x - celwidth;
@@ -1035,9 +1029,7 @@ text(draw_context_t *dc, module_option_t *opts)
 	color_t *fg = bar.fg;
 	if (opts->text.fg)
 		fg = color_load(opts->text.fg);
-	draw_padding(dc, celwidth);
-	draw_string(dc, fg, opts->text.label);
-	draw_padding(dc, celwidth);
+	draw_color_text(dc, fg, opts->text.label);
 }
 
 /**
@@ -1055,7 +1047,9 @@ render_labels(draw_context_t *dc, label_t *labels, size_t nlabel)
 	for (i = 0; i < nlabel; i++) {
 		x = dc_get_x(dc);
 
+		draw_padding(dc, celwidth);
 		labels[i].option->any.func(dc, labels[i].option);
+		draw_padding(dc, celwidth);
 		labels[i].width = dc_get_x(dc) - x;
 		labels[i].x = x;
 		dc->width += labels[i].width;
@@ -1306,8 +1300,6 @@ systray(draw_context_t *dc, module_option_t *opts)
 	if (systray_get_window(tray) != dc->xbar.win)
 		return;
 
-	draw_padding(dc, celwidth);
-
 	/* render spaces for iconsize */
 	base = systray_get_items(tray);
 	list_for_each(base, pos) {
@@ -1318,8 +1310,6 @@ systray(draw_context_t *dc, module_option_t *opts)
 		if (base != pos->next)
 			draw_padding(dc, celwidth);
 	}
-
-	draw_padding(dc, celwidth);
 }
 
 /**
