@@ -71,6 +71,11 @@ struct _color_t {
 };
 
 typedef struct {
+	xcb_pixmap_t pixmap;
+	xcb_shm_segment_info_t shm_info;
+} pixmap_t;
+
+typedef struct {
 	FT_Face face;
 	cairo_font_face_t *cairo;
 	hb_font_t *hb;
@@ -124,8 +129,8 @@ struct _draw_context_t {
 
 	xcb_visualtype_t *visual;
 	xcb_gcontext_t gc;
-	xcb_drawable_t buf;
-	xcb_drawable_t tmp;
+	pixmap_t *buf;
+	pixmap_t *tmp;
 	xcb_shm_segment_info_t shm_info;
 	cairo_t *cr;
 
@@ -206,6 +211,9 @@ static bool load_fonts(const char *);
 static void font_destroy(font_t font);
 static size_t load_glyphs_from_hb_buffer(draw_context_t *, hb_buffer_t *, font_t *, int *, int, glyph_font_spec_t *, size_t);
 static int load_glyphs(draw_context_t *, const char *, glyph_font_spec_t *, int, int *);
+static bool xcb_create_pixmap_with_shm(xcb_connection_t *, xcb_screen_t *, xcb_pixmap_t, uint32_t, uint32_t, xcb_shm_segment_info_t *);
+static pixmap_t *pixmap_new(xcb_connection_t *, xcb_screen_t *, uint32_t, uint32_t);
+static void pixmap_free(pixmap_t *);
 static bool dc_init(draw_context_t *, xcb_connection_t *, xcb_screen_t *, int, int, int, int);
 static void dc_free(draw_context_t);
 static int dc_get_x(draw_context_t *);
@@ -404,6 +412,53 @@ xcb_create_pixmap_with_shm(xcb_connection_t *xcb, xcb_screen_t *scr, xcb_pixmap_
 }
 
 /**
+ * pixmap_new() - create a new pixmap.
+ * @xcb: xcb connection.
+ * @scr: screen.
+ * @dc: draw context.
+ * @pixmap: pixmap id.
+ * @width: width of new pixmap.
+ * @height: height of new pixmap.
+ */
+pixmap_t *
+pixmap_new(xcb_connection_t *xcb, xcb_screen_t *scr, uint32_t width, uint32_t height)
+{
+	xcb_shm_segment_info_t shm_info = { 0 };
+	xcb_pixmap_t xcb_pixmap = xcb_generate_id(xcb);
+	bool res = false;
+
+	if (xcb_shm_support(xcb))
+		res = xcb_create_pixmap_with_shm(xcb, scr, xcb_pixmap, width, height, &shm_info);
+	else
+		res = xcb_request_check(xcb, xcb_create_pixmap(xcb, scr->root_depth, xcb_pixmap, scr->root, width, height));
+
+	if (!res)
+		return NULL;
+
+	pixmap_t *pixmap = calloc(1, sizeof(pixmap_t));
+	pixmap->pixmap = xcb_pixmap;
+	pixmap->shm_info = shm_info;
+
+	return pixmap;
+}
+
+/**
+ * pixmap_free() - free pixmap_t
+ * @pixmap: pixmap pointer.
+ */
+void
+pixmap_free(pixmap_t *pixmap)
+{
+	if (pixmap->shm_info.shmseg) {
+		/* if using shm */
+		xcb_shm_detach(bar.xcb, pixmap->shm_info.shmseg);
+		shmdt(pixmap->shm_info.shmaddr);
+	}
+	xcb_free_pixmap(bar.xcb, pixmap->pixmap);
+	free(pixmap);
+}
+
+/**
  * dc_init() - initialize DC.
  * @dc: draw context.
  * @xcb: xcb connection.
@@ -466,23 +521,16 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 	xcb_ewmh_set_wm_strut_partial(&ewmh, xw->win, strut_partial);
 
 	/* create graphic context */
-	dc->buf = xcb_generate_id(xcb);
-	dc->tmp = xcb_generate_id(xcb);
 	dc->visual = xcb_visualtype_get(scr);
 
 	/* create pixmap image for rendering */
-	if (xcb_shm_support(xcb)) {
-		xcb_create_pixmap_with_shm(xcb, scr, dc->buf, width, height, &dc->shm_info);
-		xcb_create_pixmap_with_shm(xcb, scr, dc->tmp, width, height, &dc->shm_info);
-	} else {
-		xcb_create_pixmap(xcb, scr->root_depth, dc->buf, scr->root, width, height);
-		xcb_create_pixmap(xcb, scr->root_depth, dc->tmp, scr->root, width, height);
-	}
+	dc->buf = pixmap_new(xcb, scr, width, height);
+	dc->tmp = pixmap_new(xcb, scr, width, height);
 
 	/* create cairo context */
 	pict_reply = xcb_render_query_pict_formats_reply(xcb, xcb_render_query_pict_formats(xcb), NULL);
 	formats = xcb_render_util_find_standard_format(pict_reply, XCB_PICT_STANDARD_RGB_24);
-	surface = cairo_xcb_surface_create_with_xrender_format(xcb, scr, dc->tmp, formats, width, height);
+	surface = cairo_xcb_surface_create_with_xrender_format(xcb, scr, dc->tmp->pixmap, formats, width, height);
 	dc->cr = cairo_create(surface);
 	cairo_set_operator(dc->cr, CAIRO_OPERATOR_SOURCE);
 	cairo_set_source_surface(dc->cr, surface, 0, 0);
@@ -492,7 +540,7 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 	/* create gc */
 	gcv.graphics_exposures = 1;
 	dc->gc = xcb_generate_id(xcb);
-	xcb_create_gc_aux(xcb, dc->gc, dc->tmp, XCB_GC_GRAPHICS_EXPOSURES, &gcv);
+	xcb_create_gc_aux(xcb, dc->gc, dc->tmp->pixmap, XCB_GC_GRAPHICS_EXPOSURES, &gcv);
 
 	/* set class hint */
 	xcb_change_property(xcb, XCB_PROP_MODE_REPLACE, xw->win, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 8, "bspwmbar");
@@ -520,13 +568,8 @@ void
 dc_free(draw_context_t dc)
 {
 	xcb_free_gc(bar.xcb, dc.gc);
-	if (dc.shm_info.shmseg) {
-		/* if using shm */
-		xcb_shm_detach(bar.xcb, dc.shm_info.shmseg);
-		shmdt(dc.shm_info.shmaddr);
-	}
-	xcb_free_pixmap(bar.xcb, dc.buf);
-	xcb_free_pixmap(bar.xcb, dc.tmp);
+	pixmap_free(dc.buf);
+	pixmap_free(dc.tmp);
 	xcb_destroy_window(bar.xcb, dc.xbar.win);
 	cairo_destroy(dc.cr);
 }
@@ -1001,7 +1044,7 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 		rect.y = graph_basey;
 		rect.width = celwidth;
 		rect.height = graph_maxh;
-		xcb_poly_fill_rectangle(bar.xcb, dc->tmp, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp->pixmap, dc->gc, 1, &rect);
 
 		if (items[i].val < 0)
 			goto CONTINUE;
@@ -1011,7 +1054,7 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 		rect.height = SMALLER(BIGGER(graph_maxh * items[i].val, 1), graph_maxh);;
 		rect.x = x - celwidth;
 		rect.y = graph_basey + (graph_maxh - rect.height);
-		xcb_poly_fill_rectangle(bar.xcb, dc->tmp, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp->pixmap, dc->gc, 1, &rect);
 	CONTINUE:
 		x += celwidth + 1;
 	}
@@ -1144,24 +1187,24 @@ render()
 		rect.height = xw->height;
 
 		xcb_gc_color(bar.xcb, dc->gc, bar.bg);
-		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->buf->pixmap, dc->gc, 1, &rect);
 
 		/* render left modules */
-		xcb_poly_fill_rectangle(bar.xcb, dc->tmp, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp->pixmap, dc->gc, 1, &rect);
 		dc->x = dc->width = 0;
 		render_labels(dc, dc->left_labels, LENGTH(left_modules));
-		xcb_copy_area(bar.xcb, dc->tmp, dc->buf, dc->gc, 0, 0, celwidth, 0, dc->width, xw->height);
+		xcb_copy_area(bar.xcb, dc->tmp->pixmap, dc->buf->pixmap, dc->gc, 0, 0, celwidth, 0, dc->width, xw->height);
 		calculate_label_positions(dc, dc->left_labels, LENGTH(left_modules), celwidth);
 
 		/* render right modules */
-		xcb_poly_fill_rectangle(bar.xcb, dc->tmp, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp->pixmap, dc->gc, 1, &rect);
 		dc->x = dc->width = 0;
 		render_labels(dc, dc->right_labels, LENGTH(right_modules));
-		xcb_copy_area(bar.xcb, dc->tmp, dc->buf, dc->gc, 0, 0, xw->width - dc->width - celwidth, 0, dc->width, xw->height);
+		xcb_copy_area(bar.xcb, dc->tmp->pixmap, dc->buf->pixmap, dc->gc, 0, 0, xw->width - dc->width - celwidth, 0, dc->width, xw->height);
 		calculate_label_positions(dc, dc->right_labels, LENGTH(right_modules), xw->width - dc->width - celwidth);
 
 		/* copy pixmap to window */
-		xcb_copy_area(bar.xcb, dc->buf, xw->win, dc->gc, 0, 0, 0, 0, xw->width, xw->height);
+		xcb_copy_area(bar.xcb, dc->buf->pixmap, xw->win, dc->gc, 0, 0, 0, 0, xw->width, xw->height);
 	}
 	xcb_flush(bar.xcb);
 }
