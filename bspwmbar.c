@@ -1095,6 +1095,11 @@ render_labels(draw_context_t *dc, label_t *labels, size_t nlabel)
 		draw_padding(dc, celwidth);
 		labels[i].width = dc_get_x(dc) - x;
 		labels[i].x = x;
+		if (labels[i].width == celwidth * 2) {
+			dc->x = x;
+			labels[i].width = 0;
+			continue;
+		}
 		dc->width += labels[i].width;
 	}
 }
