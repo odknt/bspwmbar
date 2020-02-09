@@ -82,6 +82,14 @@ module_t right_modules[] = {
 			.prefix = "mem: "
 		},
 	},
+	// { /* backlight */
+	// 	.backlight = {
+	// 		.func = backlight,
+	// 		.handler = backlight_ev,
+	// 		.prefix = "盛 ",
+	// 		.suffix = "％",
+	// 	},
+	// },
 	{ /* master playback volume */
 		.vol = {
 			.func = volume,
