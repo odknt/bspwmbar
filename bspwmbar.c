@@ -1523,7 +1523,8 @@ xev_handle()
 					dc = &bar.dcs[j];
 			if (!dc)
 				break;
-			/* handle evnent */
+			/* notify evnent to modules */
+			xcb_event_notify(event, dc);
 			break;
 		case XCB_PROPERTY_NOTIFY:
 			prop = (xcb_property_notify_event_t *)event;
