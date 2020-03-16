@@ -27,9 +27,7 @@ debug:
 	@make CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)"
 .PHONY: debug
 
-$(OBJ): config.h util.h bspwmbar.h
-
-.c.o: config.h
+%.o: %.c config.h util.h bspwmbar.h
 	$(CC) -o $@ -c $(CFLAGS) $(DEPCFLAGS) $<
 
 config.h:
