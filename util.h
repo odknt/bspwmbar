@@ -26,6 +26,8 @@ typedef struct _list_head {
 #define list_head_init(ptr) { (ptr)->prev = (ptr); (ptr)->next = (ptr); }
 #define list_for_each(head, pos) \
 for (pos = (head)->next; pos != (head); pos = pos->next)
+#define list_for_each_reverse(head, pos) \
+for (pos = (head)->prev; pos != (head); pos = pos->prev)
 #define list_entry(ptr, type, member) \
 ((type *)((char *)(ptr)-(char *)(&((type *)0)->member)))
 #define list_empty(head) ((head)->next == (head))

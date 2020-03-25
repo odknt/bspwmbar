@@ -121,12 +121,12 @@ alsa_connect()
 	snd_mixer_load(mixer);
 
 	/* get poll fd */
-	struct pollfd *pfds = alloca(sizeof(struct pollfd));
-	if (!snd_ctl_poll_descriptors(ctl, pfds, 1)) {
+	struct pollfd pfds;
+	if (!snd_ctl_poll_descriptors(ctl, &pfds, 1)) {
 		snd_ctl_close(ctl);
 		return -1;
 	}
-	return pfds->fd;
+	return pfds.fd;
 }
 
 poll_result_t

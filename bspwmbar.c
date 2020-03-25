@@ -13,8 +13,6 @@
 #endif
 
 /* common libraries */
-#include <sys/socket.h>
-#include <sys/un.h>
 #include <locale.h>
 #include <signal.h>
 #include <stdint.h>
@@ -49,6 +47,7 @@
 
 /* local headers */
 #include "bspwmbar.h"
+#include "bspwm.h"
 #include "systray.h"
 #include "config.h"
 
@@ -56,8 +55,6 @@
 # define VERSION "v0.0.0-dev"
 #endif
 
-/* bspwm commands */
-#define SUBSCRIBE_REPORT "subscribe\0report"
 /* epoll max events */
 #define MAX_EVENTS 10
 /* convert color for cairo */
@@ -74,6 +71,11 @@ struct _color_t {
 };
 
 typedef struct {
+	xcb_pixmap_t pixmap;
+	xcb_shm_segment_info_t shm_info;
+} pixmap_t;
+
+typedef struct {
 	FT_Face face;
 	cairo_font_face_t *cairo;
 	hb_font_t *hb;
@@ -86,16 +88,8 @@ typedef struct {
 
 static glyph_font_spec_t glyph_caches[1024];
 
-typedef enum {
-	DA_RIGHT = 0,
-	DA_LEFT,
-	/* currently not supported the below */
-	DA_CENTER
-} draw_align_t;
-
 typedef struct {
 	module_option_t *option;
-	draw_align_t align;
 	color_t fg, bg;
 
 	int x, width;
@@ -125,31 +119,28 @@ typedef struct {
 
 typedef struct {
 	xcb_window_t win;
-	monitor_t monitor;
 
 	int x, y, width, height;
 } window_t;
 
 struct _draw_context_t {
 	window_t xbar;
+	char monitor_name[NAME_MAXSZ];
 
 	xcb_visualtype_t *visual;
 	xcb_gcontext_t gc;
-	xcb_drawable_t buf;
+	pixmap_t *buf;
+	pixmap_t *tmp;
 	xcb_shm_segment_info_t shm_info;
-	draw_align_t align;
 	cairo_t *cr;
 
-	int left_x, right_x;
+	int x, width;
 
-	label_t labels[LENGTH(left_modules) + LENGTH(right_modules)];
-	int nlabel;
+	label_t left_labels[LENGTH(left_modules)];
+	label_t right_labels[LENGTH(right_modules)];
 };
 
 typedef struct {
-	/* bspwm socket fd */
-	int fd;
-
 	/* xcb resources */
 	xcb_connection_t *xcb;
 	xcb_screen_t *scr;
@@ -173,7 +164,7 @@ typedef struct {
 
 static bspwmbar_t bar;
 static systray_t *tray;
-static poll_fd_t bfd, xfd;
+static poll_fd_t xfd;
 #if defined(__linux)
 static poll_fd_t timer;
 #endif
@@ -220,20 +211,20 @@ static bool load_fonts(const char *);
 static void font_destroy(font_t font);
 static size_t load_glyphs_from_hb_buffer(draw_context_t *, hb_buffer_t *, font_t *, int *, int, glyph_font_spec_t *, size_t);
 static int load_glyphs(draw_context_t *, const char *, glyph_font_spec_t *, int, int *);
+static bool xcb_create_pixmap_with_shm(xcb_connection_t *, xcb_screen_t *, xcb_pixmap_t, uint32_t, uint32_t, xcb_shm_segment_info_t *);
+static pixmap_t *pixmap_new(xcb_connection_t *, xcb_screen_t *, uint32_t, uint32_t);
+static void pixmap_free(pixmap_t *);
 static bool dc_init(draw_context_t *, xcb_connection_t *, xcb_screen_t *, int, int, int, int);
 static void dc_free(draw_context_t);
 static int dc_get_x(draw_context_t *);
 static void dc_move_x(draw_context_t *, int);
 static void dc_calc_render_pos(draw_context_t *, glyph_font_spec_t *, int);
 static void draw_padding(draw_context_t *, int);
-static void draw_string(draw_context_t *, color_t *, const char *);
 static void draw_glyphs(draw_context_t *, color_t *, const glyph_font_spec_t *, int nglyph);
-static void render_label(draw_context_t *);
-static int bspwm_connect();
-static int bspwm_send(char *, int);
-static void bspwm_parse(char *);
-static desktop_state_t bspwm_desktop_state(char);
+static void render_labels(draw_context_t *, label_t *, size_t);
 static void windowtitle_update(xcb_connection_t *, uint8_t);
+static void calculate_systray_item_positions(label_t *, module_option_t *);
+static void calculate_label_positions(draw_context_t *, label_t *, size_t, int);
 static void render();
 static int get_baseline();
 static bool bspwmbar_init(xcb_connection_t *, xcb_screen_t *);
@@ -241,7 +232,6 @@ static void bspwmbar_destroy();
 static void poll_init();
 static void poll_loop(void (*)());
 static void poll_stop();
-static poll_result_t bspwm_handle(int);
 static poll_result_t xev_handle();
 #if defined(__linux)
 static poll_result_t timer_reset(int);
@@ -351,29 +341,6 @@ color_default_bg()
 }
 
 /**
- * bspwm_desktop_state() - parse char to bspwm desktop state.
- * @s: desktop state char.
- *
- * Retrun: DesktopState
- * 'o'         - STATE_OCCUPIED
- * 'u'         - STATE_URGENT
- * 'F','U','O' - STATE_ACTIVE
- * not match   - STATE_FREE
- */
-desktop_state_t
-bspwm_desktop_state(char s)
-{
-	desktop_state_t state = STATE_FREE;
-	if ((s | 0x20) == 'o')
-		state = STATE_OCCUPIED;
-	if ((s | 0x20) == 'u')
-		state = STATE_URGENT;
-	if (s == 'F' || s == 'U' || s == 'O')
-		return state | STATE_ACTIVE;
-	return state;
-}
-
-/**
  * xcb_visualtype_get() - get visualtype
  * @scr: xcb_screen_t *
  *
@@ -445,6 +412,53 @@ xcb_create_pixmap_with_shm(xcb_connection_t *xcb, xcb_screen_t *scr, xcb_pixmap_
 }
 
 /**
+ * pixmap_new() - create a new pixmap.
+ * @xcb: xcb connection.
+ * @scr: screen.
+ * @dc: draw context.
+ * @pixmap: pixmap id.
+ * @width: width of new pixmap.
+ * @height: height of new pixmap.
+ */
+pixmap_t *
+pixmap_new(xcb_connection_t *xcb, xcb_screen_t *scr, uint32_t width, uint32_t height)
+{
+	xcb_shm_segment_info_t shm_info = { 0 };
+	xcb_pixmap_t xcb_pixmap = xcb_generate_id(xcb);
+	bool res = false;
+
+	if (xcb_shm_support(xcb))
+		res = xcb_create_pixmap_with_shm(xcb, scr, xcb_pixmap, width, height, &shm_info);
+	else
+		res = xcb_request_check(xcb, xcb_create_pixmap(xcb, scr->root_depth, xcb_pixmap, scr->root, width, height));
+
+	if (!res)
+		return NULL;
+
+	pixmap_t *pixmap = calloc(1, sizeof(pixmap_t));
+	pixmap->pixmap = xcb_pixmap;
+	pixmap->shm_info = shm_info;
+
+	return pixmap;
+}
+
+/**
+ * pixmap_free() - free pixmap_t
+ * @pixmap: pixmap pointer.
+ */
+void
+pixmap_free(pixmap_t *pixmap)
+{
+	if (pixmap->shm_info.shmseg) {
+		/* if using shm */
+		xcb_shm_detach(bar.xcb, pixmap->shm_info.shmseg);
+		shmdt(pixmap->shm_info.shmaddr);
+	}
+	xcb_free_pixmap(bar.xcb, pixmap->pixmap);
+	free(pixmap);
+}
+
+/**
  * dc_init() - initialize DC.
  * @dc: draw context.
  * @xcb: xcb connection.
@@ -507,19 +521,16 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 	xcb_ewmh_set_wm_strut_partial(&ewmh, xw->win, strut_partial);
 
 	/* create graphic context */
-	dc->buf = xcb_generate_id(xcb);
 	dc->visual = xcb_visualtype_get(scr);
 
 	/* create pixmap image for rendering */
-	if (xcb_shm_support(xcb))
-		xcb_create_pixmap_with_shm(xcb, scr, dc->buf, width, height, &dc->shm_info);
-	else
-		xcb_create_pixmap(xcb, scr->root_depth, dc->buf, scr->root, width, height);
+	dc->buf = pixmap_new(xcb, scr, width, height);
+	dc->tmp = pixmap_new(xcb, scr, width, height);
 
 	/* create cairo context */
 	pict_reply = xcb_render_query_pict_formats_reply(xcb, xcb_render_query_pict_formats(xcb), NULL);
 	formats = xcb_render_util_find_standard_format(pict_reply, XCB_PICT_STANDARD_RGB_24);
-	surface = cairo_xcb_surface_create_with_xrender_format(xcb, scr, dc->buf, formats, width, height);
+	surface = cairo_xcb_surface_create_with_xrender_format(xcb, scr, dc->tmp->pixmap, formats, width, height);
 	dc->cr = cairo_create(surface);
 	cairo_set_operator(dc->cr, CAIRO_OPERATOR_SOURCE);
 	cairo_set_source_surface(dc->cr, surface, 0, 0);
@@ -529,23 +540,17 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 	/* create gc */
 	gcv.graphics_exposures = 1;
 	dc->gc = xcb_generate_id(xcb);
-	xcb_create_gc_aux(xcb, dc->gc, dc->buf, XCB_GC_GRAPHICS_EXPOSURES, &gcv);
+	xcb_create_gc_aux(xcb, dc->gc, dc->tmp->pixmap, XCB_GC_GRAPHICS_EXPOSURES, &gcv);
 
 	/* set class hint */
 	xcb_change_property(xcb, XCB_PROP_MODE_REPLACE, xw->win, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8, 8, "bspwmbar");
 	xcb_change_property(xcb, XCB_PROP_MODE_REPLACE, xw->win, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 8, 17, "bspwmbar\0bspwmbar");
 
 	/* create labels from modules */
-	dc->nlabel = LENGTH(left_modules) + LENGTH(right_modules);
-	for (i = 0; i < (int)LENGTH(left_modules); i++) {
-		dc->labels[i].align = DA_LEFT;
-		dc->labels[i].option = &left_modules[i];
-	}
-	int rmlen = LENGTH(right_modules), nlabel = i;
-	for (i = rmlen - 1; i >= 0; i--, nlabel++) {
-		dc->labels[nlabel].align = DA_RIGHT;
-		dc->labels[nlabel].option = &right_modules[i];
-	}
+	for (i = 0; i < (int)LENGTH(left_modules); i++)
+		dc->left_labels[i].option = &left_modules[i];
+	for (i = 0; i < (int)LENGTH(right_modules); i++)
+		dc->right_labels[i].option = &right_modules[i];
 
 	/* send window rendering request */
 	winconf.stack_mode = XCB_STACK_MODE_BELOW;
@@ -563,15 +568,16 @@ void
 dc_free(draw_context_t dc)
 {
 	xcb_free_gc(bar.xcb, dc.gc);
-	if (dc.shm_info.shmseg) {
-		/* if using shm */
-		xcb_shm_detach(bar.xcb, dc.shm_info.shmseg);
-		shmdt(dc.shm_info.shmaddr);
-	}
-	xcb_free_pixmap(bar.xcb, dc.buf);
+	pixmap_free(dc.buf);
+	pixmap_free(dc.tmp);
 	xcb_destroy_window(bar.xcb, dc.xbar.win);
 	cairo_destroy(dc.cr);
-	free(dc.xbar.monitor.desktops);
+}
+
+const char *
+draw_context_monitor_name(draw_context_t *dc)
+{
+	return dc->monitor_name;
 }
 
 /**
@@ -583,9 +589,7 @@ dc_free(draw_context_t dc)
 int
 dc_get_x(draw_context_t *dc)
 {
-	if (dc->align == DA_LEFT)
-		return dc->left_x;
-	return dc->xbar.width - dc->right_x;
+	return dc->x;
 }
 
 /**
@@ -596,10 +600,7 @@ dc_get_x(draw_context_t *dc)
 void
 dc_move_x(draw_context_t *dc, int x)
 {
-	if (dc->align == DA_LEFT)
-		dc->left_x += x;
-	else if (dc->align == DA_RIGHT)
-		dc->right_x += x;
+	dc->x += x;
 }
 
 /**
@@ -949,42 +950,41 @@ load_glyphs(draw_context_t *dc, const char *str, glyph_font_spec_t *glyphs, int 
 }
 
 /**
- * draw_padding() - pender padding.
+ * draw_padding_em() - render padding by em units.
+ * @dc: DC.
+ * @num: padding width.
+ */
+void
+draw_padding_em(draw_context_t *dc, double em)
+{
+	draw_padding(dc, celwidth * em);
+}
+
+/**
+ * draw_padding() - render padding.
  * @dc: DC.
  * @num: padding width.
  */
 void
 draw_padding(draw_context_t *dc, int num)
 {
-	switch ((int)dc->align) {
-	case DA_LEFT:
-		dc->left_x += num;
-		break;
-	case DA_RIGHT:
-		if (!dc->right_x)
-			num += celwidth;
-		dc->right_x += num;
-		break;
-	}
+	dc->x += num;
 }
 
 /**
- * draw_string() - render string with the color.
+ * draw_color_text() - render text with color.
  * @dc: DC.
  * @color: rendering text color.
  * @str: rendering text.
  */
 void
-draw_string(draw_context_t *dc, color_t *color, const char *str)
+draw_color_text(draw_context_t *dc, color_t *color, const char *str)
 {
 	int width;
 	size_t nglyph = load_glyphs(dc, str, glyph_caches, sizeof(glyph_caches), &width);
-	if (dc->align == DA_RIGHT)
-		dc_move_x(dc, width);
 	dc_calc_render_pos(dc, glyph_caches, nglyph);
 	draw_glyphs(dc, color, glyph_caches, nglyph);
-	if (dc->align == DA_LEFT)
-		dc_move_x(dc, width);
+	dc_move_x(dc, width);
 }
 
 /**
@@ -1020,9 +1020,7 @@ draw_glyphs(draw_context_t *dc, color_t *color, const glyph_font_spec_t *specs, 
 void
 draw_text(draw_context_t *dc, const char *str)
 {
-	draw_padding(dc, celwidth);
-	draw_string(dc, bar.fg, str);
-	draw_padding(dc, celwidth);
+	draw_color_text(dc, bar.fg, str);
 }
 
 /**
@@ -1037,20 +1035,16 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 {
 	xcb_rectangle_t rect = { 0 };
 
-	draw_padding(dc, celwidth);
 	int width = (celwidth + 1) * nitem;
-	if (dc->align == DA_RIGHT)
-		dc->right_x += width;
+	draw_color_text(dc, bar.fg, label);
 	int x = dc_get_x(dc) + celwidth;
-	draw_string(dc, bar.fg, label);
-	draw_padding(dc, celwidth);
 	for (int i = 0; i < nitem; i++) {
 		xcb_gc_color(bar.xcb, dc->gc, items[i].bg);
 		rect.x = x - celwidth;
 		rect.y = graph_basey;
 		rect.width = celwidth;
 		rect.height = graph_maxh;
-		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp->pixmap, dc->gc, 1, &rect);
 
 		if (items[i].val < 0)
 			goto CONTINUE;
@@ -1060,73 +1054,11 @@ draw_bargraph(draw_context_t *dc, const char *label, graph_item_t *items, int ni
 		rect.height = SMALLER(BIGGER(graph_maxh * items[i].val, 1), graph_maxh);;
 		rect.x = x - celwidth;
 		rect.y = graph_basey + (graph_maxh - rect.height);
-		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp->pixmap, dc->gc, 1, &rect);
 	CONTINUE:
 		x += celwidth + 1;
 	}
-	if (dc->align == DA_LEFT)
-		dc_move_x(dc, width);
-}
-
-/**
- * bspwm_parse() - parse bspwm reported string.
- * @report: bspwm reported string.
- */
-void
-bspwm_parse(char *report)
-{
-	int i, j, name_len, nws = 0;
-	int len = strlen(report);
-	char tok, name[NAME_MAXSZ];
-	monitor_t *curmon = NULL;
-
-	for (i = 0; i < len; i++) {
-		switch (tok = report[i]) {
-		case 'M':
-		case 'm':
-			nws = 0;
-			for (j = ++i; j < len; j++)
-				if (report[j] == ':')
-					break;
-			name_len = SMALLER(j - i, NAME_MAXSZ - 1);
-			strncpy(name, &report[i], name_len);
-			name[name_len] = '\0';
-			i = j;
-			for (j = 0; j < bar.ndc; j++)
-				if (!strncmp(bar.dcs[j].xbar.monitor.name, name, strlen(name)))
-					curmon = &bar.dcs[j].xbar.monitor;
-			if (curmon)
-				curmon->is_active = (tok == 'M') ? 1 : 0;
-			break;
-		case 'o':
-		case 'O':
-		case 'f':
-		case 'F':
-		case 'u':
-		case 'U':
-			for (j = ++i; j < len; j++)
-				if (report[j] == ':')
-					break;
-			if (nws + 1 >= curmon->cdesktop) {
-				curmon->cdesktop += 5;
-				curmon->desktops = realloc(curmon->desktops, sizeof(desktop_t) * curmon->cdesktop);
-			}
-			curmon->desktops[nws++].state = bspwm_desktop_state(tok);
-			i = j;
-			break;
-		case 'L':
-		case 'T':
-			i++; /* skip next char. */
-			break;
-		case 'G':
-			if (curmon)
-				curmon->ndesktop = nws;
-			/* skip current node flags. */
-			while (report[i + 1] != ':' && report[i + 1] != '\n')
-				i++;
-			break;
-		}
-	}
+	dc_move_x(dc, width);
 }
 
 /**
@@ -1140,32 +1072,35 @@ text(draw_context_t *dc, module_option_t *opts)
 	color_t *fg = bar.fg;
 	if (opts->text.fg)
 		fg = color_load(opts->text.fg);
-	draw_padding(dc, celwidth);
-	draw_string(dc, fg, opts->text.label);
-	draw_padding(dc, celwidth);
+	draw_color_text(dc, fg, opts->text.label);
 }
 
 /**
- * render_label() - render all labels
+ * render_labels() - render all labels
  * @dc: DC.
+ * @labels: label_t array.
+ * @nlabel: length of labels.
  */
 void
-render_label(draw_context_t *dc)
+render_labels(draw_context_t *dc, label_t *labels, size_t nlabel)
 {
-	int x = 0, width = 0;
-	for (int j = 0; j < dc->nlabel; j++) {
-		x = dc_get_x(dc); width = 0;
+	size_t i;
+	int x = 0;
 
-		dc->align = dc->labels[j].align;
-		dc->labels[j].option->any.func(dc, dc->labels[j].option);
-		if (dc->align == DA_LEFT) {
-			width = dc_get_x(dc) - x;
-		} else if (dc->align == DA_RIGHT) {
-			width = x - dc_get_x(dc);
-			x = dc_get_x(dc);
+	for (i = 0; i < nlabel; i++) {
+		x = dc_get_x(dc);
+
+		draw_padding(dc, celwidth);
+		labels[i].option->any.func(dc, labels[i].option);
+		draw_padding(dc, celwidth);
+		labels[i].width = dc_get_x(dc) - x;
+		labels[i].x = x;
+		if (labels[i].width == celwidth * 2) {
+			dc->x = x;
+			labels[i].width = 0;
+			continue;
 		}
-		dc->labels[j].width = width;
-		dc->labels[j].x = x;
+		dc->width += labels[i].width;
 	}
 }
 
@@ -1183,6 +1118,63 @@ xcb_gc_color(xcb_connection_t *xcb, xcb_gcontext_t gc, color_t *color)
 }
 
 /**
+ * calculate_systray_item_positions() - calculate position of tray items.
+ * @label: the label must has been made from systray module.
+ * @opts: module option.
+ */
+void
+calculate_systray_item_positions(label_t *label, module_option_t *opts)
+{
+	xcb_configure_window_value_list_t values;
+	uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
+	systray_item_t *item;
+	list_head *pos;
+	int x;
+
+	if (!systray_icon_size(tray))
+		systray_set_icon_size(tray, opts->tray.iconsize);
+
+	if (list_empty(systray_get_items(tray)))
+		return;
+
+	/* fix the position for padding */
+	x = label->x + celwidth;
+	list_for_each(systray_get_items(tray), pos) {
+		item = list_entry(pos, systray_item_t, head);
+		if (!item->info.flags)
+			continue;
+		if (item->x != x) {
+			values.x = x;
+			values.y = (BAR_HEIGHT - opts->tray.iconsize) / 2;
+			values.width = opts->tray.iconsize;
+			values.height = opts->tray.iconsize;
+			if (!xcb_request_check(bar.xcb, xcb_configure_window_aux(bar.xcb, item->win, mask, &values)))
+				item->x = x;
+		}
+		x += opts->tray.iconsize + celwidth;
+	}
+}
+
+/**
+ * calculate_label_positions() - calculate position of labels.
+ * @dc: draw_context_t
+ * @labels: label_t array.
+ * @nlabel: length of labels.
+ * @offset: position offset.
+ */
+void
+calculate_label_positions(draw_context_t *dc, label_t *labels, size_t nlabel, int offset)
+{
+	size_t i;
+	for (i = 0; i < nlabel; i++) {
+		labels[i].x += offset;
+
+		if (systray_get_window(tray) == dc->xbar.win && labels[i].option->any.func == systray)
+			calculate_systray_item_positions(&labels[i], labels[i].option);
+	}
+}
+
+/**
  * render() - rendering all modules.
  */
 void
@@ -1191,59 +1183,35 @@ render()
 	draw_context_t *dc;
 	window_t *xw;
 	xcb_rectangle_t rect = { 0 };
+	int i;
 
-	for (int i = 0; i < bar.ndc; i++) {
+	for (i = 0; i < bar.ndc; i++) {
 		dc = &bar.dcs[i];
-		dc->align = DA_LEFT;
-		dc->left_x = 0;
-		dc->right_x = 0;
 		xw = &dc->xbar;
 		rect.width = xw->width;
 		rect.height = xw->height;
 
 		xcb_gc_color(bar.xcb, dc->gc, bar.bg);
-		xcb_poly_fill_rectangle(bar.xcb, dc->buf, dc->gc, 1, &rect);
+		xcb_poly_fill_rectangle(bar.xcb, dc->buf->pixmap, dc->gc, 1, &rect);
 
-		/* render modules */
-		draw_padding(dc, celwidth);
-		render_label(dc);
+		/* render left modules */
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp->pixmap, dc->gc, 1, &rect);
+		dc->x = dc->width = 0;
+		render_labels(dc, dc->left_labels, LENGTH(left_modules));
+		xcb_copy_area(bar.xcb, dc->tmp->pixmap, dc->buf->pixmap, dc->gc, 0, 0, celwidth, 0, dc->width, xw->height);
+		calculate_label_positions(dc, dc->left_labels, LENGTH(left_modules), celwidth);
+
+		/* render right modules */
+		xcb_poly_fill_rectangle(bar.xcb, dc->tmp->pixmap, dc->gc, 1, &rect);
+		dc->x = dc->width = 0;
+		render_labels(dc, dc->right_labels, LENGTH(right_modules));
+		xcb_copy_area(bar.xcb, dc->tmp->pixmap, dc->buf->pixmap, dc->gc, 0, 0, xw->width - dc->width - celwidth, 0, dc->width, xw->height);
+		calculate_label_positions(dc, dc->right_labels, LENGTH(right_modules), xw->width - dc->width - celwidth);
 
 		/* copy pixmap to window */
-		xcb_copy_area(bar.xcb, dc->buf, xw->win, dc->gc, 0, 0, 0, 0, xw->width, xw->height);
+		xcb_copy_area(bar.xcb, dc->buf->pixmap, xw->win, dc->gc, 0, 0, 0, 0, xw->width, xw->height);
 	}
 	xcb_flush(bar.xcb);
-}
-
-/**
- * bspwm_connect() - connect to bspwm socket.
- *
- * Return: file descripter or -1.
- */
-int
-bspwm_connect()
-{
-	struct sockaddr_un sock;
-	int fd, dpyno = 0, scrno = 0;
-	char *sp = NULL;
-
-	sock.sun_family = AF_UNIX;
-	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-		return -1;
-
-	sp = getenv("BSPWM_SOCKET");
-	if (sp) {
-		snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", sp);
-	} else {
-		if (xcb_parse_display(NULL, &sp, &dpyno, &scrno))
-			snprintf(sock.sun_path, sizeof(sock.sun_path),
-			         "/tmp/bspwm%s_%i_%i-socket", sp, dpyno, scrno);
-		free(sp);
-	}
-
-	if (connect(fd, (struct sockaddr *)&sock, sizeof(sock)) == -1)
-		return -1;
-
-	return fd;
 }
 
 /**
@@ -1265,12 +1233,6 @@ bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 	xcb_randr_get_crtc_info_reply_t *crtc_reply;
 	int i, nmon = 0;
 
-	/* connect bspwm socket */
-	if ((bar.fd = bspwm_connect()) == -1) {
-		err("bspwm_connect(): Failed to connect to the socket\n");
-		return 1;
-	}
-
 	/* initialize */
 	bar.xcb = xcb;
 	bar.scr = scr;
@@ -1291,7 +1253,7 @@ bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 		if (info_reply->crtc != XCB_NONE) {
 			crtc_reply = xcb_randr_get_crtc_info_reply(xcb, xcb_randr_get_crtc_info(xcb, info_reply->crtc, XCB_TIME_CURRENT_TIME), NULL);
 			if (dc_init(&bar.dcs[nmon], xcb, scr, crtc_reply->x, crtc_reply->y, crtc_reply->width, BAR_HEIGHT))
-				strncpy(bar.dcs[nmon++].xbar.monitor.name, (const char *)xcb_randr_get_output_info_name(info_reply), NAME_MAXSZ);
+				strncpy(bar.dcs[nmon++].monitor_name, (const char *)xcb_randr_get_output_info_name(info_reply), NAME_MAXSZ);
 			free(crtc_reply);
 		}
 		free(info_reply);
@@ -1367,49 +1329,6 @@ bspwmbar_destroy()
 }
 
 /**
- * bspwm_send() - send specified command to bspwm.
- * @cmd: bspwm command.
- * @len: length of cmd.
- *
- * Return: sent bytes length.
- */
-int
-bspwm_send(char *cmd, int len)
-{
-	return send(bar.fd, cmd, len, 0);
-}
-
-/**
- * desktops() - render bspwm desktop states.
- * @dc: draw context.
- * @opts: module options.
- */
-void
-desktops(draw_context_t *dc, module_option_t *opts)
-{
-	static color_t *fg = NULL, *altfg = NULL;
-	color_t *col;
-	const char *ws;
-	int cur, max = dc->xbar.monitor.ndesktop;
-
-	if (!fg)
-		fg = color_load(FGCOLOR);
-	if (!altfg)
-		altfg = color_load(ALTFGCOLOR);
-
-	draw_padding(dc, celwidth);
-	for (int i = 0, j = max - 1; i < max; i++, j--) {
-		cur = (dc->align == DA_RIGHT) ? j : i;
-		draw_padding(dc, celwidth / 2.0 + 0.5);
-		ws = (dc->xbar.monitor.desktops[cur].state & STATE_ACTIVE) ? opts->desk.active : opts->desk.inactive;
-		col = (dc->xbar.monitor.desktops[cur].state == STATE_FREE) ? altfg : fg;
-		draw_string(dc, col, ws);
-		draw_padding(dc, celwidth / 2.0 + 0.5);
-	}
-	draw_padding(dc, celwidth);
-}
-
-/**
  * systray() - render systray.
  * @dc: draw context.
  * @opts: dummy.
@@ -1417,10 +1336,7 @@ desktops(draw_context_t *dc, module_option_t *opts)
 void
 systray(draw_context_t *dc, module_option_t *opts)
 {
-	list_head *pos;
-	int x;
-	xcb_configure_window_value_list_t values;
-	uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT;
+	list_head *pos, *base;
 	(void)opts;
 
 	if (!systray_icon_size(tray))
@@ -1432,25 +1348,16 @@ systray(draw_context_t *dc, module_option_t *opts)
 	if (systray_get_window(tray) != dc->xbar.win)
 		return;
 
-	draw_padding(dc, celwidth);
-
-	list_for_each(systray_get_items(tray), pos) {
+	/* render spaces for iconsize */
+	base = systray_get_items(tray);
+	list_for_each(base, pos) {
 		systray_item_t *item = list_entry(pos, systray_item_t, head);
 		if (!item->info.flags)
 			continue;
 		draw_padding(dc, opts->tray.iconsize);
-		x = dc_get_x(dc);
-		if (item->x != x) {
-			values.x = x;
-			values.y = (BAR_HEIGHT - opts->tray.iconsize) / 2;
-			values.width = opts->tray.iconsize;
-			values.height = opts->tray.iconsize;
-			if (!xcb_request_check(bar.xcb, xcb_configure_window_aux(bar.xcb, item->win, mask, &values)))
-				item->x = x;
-		}
-		draw_padding(dc, celwidth);
+		if (base != pos->next)
+			draw_padding(dc, celwidth);
 	}
-	draw_padding(dc, celwidth);
 }
 
 /**
@@ -1542,43 +1449,6 @@ timer_reset(int fd)
 
 #endif
 /**
- * bspwm_handle() - bspwm event handling function.
- * @fd: a file descriptor for bspwm socket.
- *
- * This function expects call after bspwm_connect().
- * Read and parse bspwm report from fd.
- *
- * Return: PollResult
- *
- * success and not need more action - PR_NOOP
- * success and need rerendering     - PR_UPDATE
- * failed to read from fd           - PR_FAILED
- */
-poll_result_t
-bspwm_handle(int fd)
-{
-	ssize_t len;
-	xcb_window_t win;
-	xcb_change_window_attributes_value_list_t attrs;
-	uint32_t mask = XCB_CW_EVENT_MASK;
-
-	attrs.event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
-
-	if ((len = recv(fd, buf, sizeof(buf) - 1, 0)) > 0) {
-		buf[len] = '\0';
-		if (buf[0] == '\x07') {
-			err("bspwm: %s", buf + 1);
-			return PR_FAILED;
-		}
-		bspwm_parse(buf);
-		if ((win = get_active_window(0)))
-			xcb_change_window_attributes_aux(bar.xcb, win, mask, &attrs);
-		return PR_UPDATE;
-	}
-	return PR_FAILED;
-}
-
-/**
  * is_change_active_window_event() - check the event is change active window.
  *
  * ev: xcb_generic_event_t
@@ -1589,6 +1459,30 @@ bool
 is_change_active_window_event(xcb_property_notify_event_t *ev)
 {
 	return (ev->window == bar.scr->root) && (ev->atom == ewmh._NET_ACTIVE_WINDOW);
+}
+
+poll_result_t
+xcb_event_notify(xcb_generic_event_t *event, draw_context_t *dc)
+{
+	size_t i;
+	xcb_button_press_event_t *button = (xcb_button_press_event_t *)event;
+	for (i = 0; i < LENGTH(left_modules); i++) {
+		if (!dc->left_labels[i].option->any.handler)
+			continue;
+		if (IS_LABEL_EVENT(dc->left_labels[i], button)) {
+			dc->left_labels[i].option->any.handler(event);
+			return PR_UPDATE;
+		}
+	}
+	for (i = 0; i < LENGTH(right_modules); i++) {
+		if (!dc->right_labels[i].option->any.handler)
+			continue;
+		if (IS_LABEL_EVENT(dc->right_labels[i], button)) {
+			dc->right_labels[i].option->any.handler(event);
+			return PR_UPDATE;
+		}
+	}
+	return PR_NOOP;
 }
 
 /**
@@ -1608,6 +1502,10 @@ xev_handle()
 	poll_result_t res = PR_NOOP;
 	draw_context_t *dc;
 
+	xcb_change_window_attributes_value_list_t attrs;
+	uint32_t mask = XCB_CW_EVENT_MASK;
+	attrs.event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
+
 	/* for X11 events */
 	while ((event = xcb_poll_for_event(bar.xcb))) {
 		switch (event->response_type & ~0x80) {
@@ -1625,16 +1523,8 @@ xev_handle()
 					dc = &bar.dcs[j];
 			if (!dc)
 				break;
-			/* handle evnent */
-			for (int j = 0; j < dc->nlabel; j++) {
-				if (!dc->labels[j].option->any.handler)
-					continue;
-				if (IS_LABEL_EVENT(dc->labels[j], button)) {
-					dc->labels[j].option->any.handler(event);
-					res = PR_UPDATE;
-					break;
-				}
-			}
+			/* notify evnent to modules */
+			xcb_event_notify(event, dc);
 			break;
 		case XCB_PROPERTY_NOTIFY:
 			prop = (xcb_property_notify_event_t *)event;
@@ -1644,6 +1534,8 @@ xev_handle()
 				windowtitle_update(bar.xcb, 0);
 				res = PR_UPDATE;
 			}
+			if (is_change_active_window_event(prop) && (win = get_active_window(0)))
+				xcb_change_window_attributes_aux(bar.xcb, win, mask, &attrs);
 			break;
 		case XCB_CLIENT_MESSAGE:
 			systray_handle(tray, event);
@@ -1811,12 +1703,6 @@ run()
 		goto CLEANUP;
 	}
 
-	/* subscribe bspwm report */
-	if (bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT)) == -1) {
-		err("bspwm_send(): Failed to send command to bspwm\n");
-		goto CLEANUP;
-	}
-
 	/* tray initialize */
 	if (!(tray = systray_new(xcb, scr, bar.dcs[0].xbar.win))) {
 		err("systray_new(): Selection already owned by other window\n");
@@ -1835,11 +1721,6 @@ run()
 		goto CLEANUP;
 	}
 #endif
-
-	/* polling bspwm report */
-	bfd.fd = bar.fd;
-	bfd.handler = bspwm_handle;
-	poll_add(&bfd);
 
 	/* wait PropertyNotify events of root window */
 	attrs.event_mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
