@@ -50,6 +50,7 @@ module_t left_modules[] = {
 			.func = desktops,
 			.focused = "",
 			.unfocused = "",
+			.fg_free = ALTFGCOLOR,
 		},
 	},
 	{ /* active window title */
