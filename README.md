@@ -6,7 +6,7 @@
 A lightweight status bar for bspwm.
 
 Currently required [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
-([AUR](https://aur.archlinux.org/packages/ttf-nerd-fonts-symbols/))
+(Arch: [ttf-nerd-fonts-symbols](https://www.archlinux.jp/packages/community/x86_64/ttf-nerd-fonts-symbols/))
 
 ![bspwmbar.png](docs/bspwmbar.png)
 
