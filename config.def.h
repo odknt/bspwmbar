@@ -82,6 +82,18 @@ module_t right_modules[] = {
 			.prefix = "mem: "
 		},
 	},
+	// { /* battery */
+	// 	.battery = {
+	// 		.func = battery,
+	// 		.prefix = " ",
+	// 		.prefix_1 = " ",
+	// 		.prefix_2 = " ",
+	// 		.prefix_3 = " ",
+	// 		.prefix_4 = " ",
+	// 		.suffix = "％",
+	// 		.path = "/sys/class/power_supply/BAT0/uevent",
+	// 	},
+	// },
 	{ /* master playback volume */
 		.vol = {
 			.func = volume,

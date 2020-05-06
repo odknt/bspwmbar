@@ -121,6 +121,16 @@ typedef struct {
 	int iconsize;
 } module_systray_t;
 
+typedef struct {
+	MODULE_BASE;
+
+	char *prefix_1;
+	char *prefix_2;
+	char *prefix_3;
+	char *prefix_4;
+	char *path;
+} module_battery_t;
+
 union _module_t {
 	module_any_t any;
 	module_systray_t tray;
@@ -133,6 +143,7 @@ union _module_t {
 	module_graph_t mem;
 	module_title_t title;
 	module_thermal_t thermal;
+	module_battery_t battery;
 };
 
 color_t *color_load(const char *);
@@ -160,5 +171,6 @@ void datetime(draw_context_t *, module_option_t *);
 void cpugraph(draw_context_t *, module_option_t *);
 void memgraph(draw_context_t *, module_option_t *);
 void systray(draw_context_t *, module_option_t *);
+void battery(draw_context_t *, module_option_t *);
 
 #endif
