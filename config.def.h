@@ -94,6 +94,14 @@ module_t right_modules[] = {
 	// 		.path = "/sys/class/power_supply/BAT0/uevent",
 	// 	},
 	// },
+	// { /* backlight */
+	// 	.backlight = {
+	// 		.func = backlight,
+	// 		.handler = backlight_ev,
+	// 		.prefix = "盛 ",
+	// 		.suffix = "％",
+	// 	},
+	// },
 	{ /* master playback volume */
 		.vol = {
 			.func = volume,

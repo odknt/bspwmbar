@@ -240,6 +240,12 @@ static bool is_change_active_window_event(xcb_property_notify_event_t *);
 static void cleanup(xcb_connection_t *);
 static void run();
 
+xcb_connection_t *
+xcb_connection()
+{
+	return bar.xcb;
+}
+
 /**
  * color_load_hex() - load a color from hex string
  * @colstr: hex string (#RRGGBB)

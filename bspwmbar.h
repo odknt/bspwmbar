@@ -131,6 +131,10 @@ typedef struct {
 	char *path;
 } module_battery_t;
 
+typedef struct {
+	MODULE_BASE;
+} module_backlight_t;
+
 union _module_t {
 	module_any_t any;
 	module_systray_t tray;
@@ -144,7 +148,10 @@ union _module_t {
 	module_title_t title;
 	module_thermal_t thermal;
 	module_battery_t battery;
+	module_backlight_t backlight;
 };
+
+xcb_connection_t *xcb_connection();
 
 color_t *color_load(const char *);
 color_t *color_default_fg();
@@ -159,6 +166,7 @@ void draw_padding_em(draw_context_t *, double);
 
 /* handler */
 void volume_ev(xcb_generic_event_t *);
+void backlight_ev(xcb_generic_event_t *);
 
 /* modules */
 void text(draw_context_t *, module_option_t *);
@@ -172,5 +180,6 @@ void cpugraph(draw_context_t *, module_option_t *);
 void memgraph(draw_context_t *, module_option_t *);
 void systray(draw_context_t *, module_option_t *);
 void battery(draw_context_t *, module_option_t *);
+void backlight(draw_context_t *, module_option_t *);
 
 #endif

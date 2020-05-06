@@ -6,7 +6,7 @@ PREFIX=/usr/local
 
 PKGCONFIG='pkg-config'
 DEPS='xcb xcb-ewmh xcb-util xcb-randr xcb-shm xcb-renderutil cairo harfbuzz fontconfig'
-MODS='bspwm cpu memory disk thermal datetime battery'
+MODS='bspwm cpu memory disk thermal datetime battery backlight'
 
 # debug flags
 CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -DNDEBUG'
