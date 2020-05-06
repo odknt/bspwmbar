@@ -1253,7 +1253,7 @@ bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 		if (info_reply->crtc != XCB_NONE) {
 			crtc_reply = xcb_randr_get_crtc_info_reply(xcb, xcb_randr_get_crtc_info(xcb, info_reply->crtc, XCB_TIME_CURRENT_TIME), NULL);
 			if (dc_init(&bar.dcs[nmon], xcb, scr, crtc_reply->x, crtc_reply->y, crtc_reply->width, BAR_HEIGHT))
-				strncpy(bar.dcs[nmon++].monitor_name, (const char *)xcb_randr_get_output_info_name(info_reply), NAME_MAXSZ);
+				strncpy(bar.dcs[nmon++].monitor_name, (const char *)xcb_randr_get_output_info_name(info_reply), SMALLER(xcb_randr_get_output_info_name_length(info_reply), NAME_MAXSZ));
 			free(crtc_reply);
 		}
 		free(info_reply);
