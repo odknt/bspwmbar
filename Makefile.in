@@ -28,7 +28,7 @@ debug:
 .PHONY: debug
 
 %.o: %.c config.h util.h bspwmbar.h
-	$(CC) -o $@ -c $(CFLAGS) $(DEPCFLAGS) $<
+	$(CC) -o $@ -c $(CFLAGS) $(DEPCFLAGS) -DVERSION='"$(VERSION)"' $<
 
 config.h:
 	cp config.def.h $@
