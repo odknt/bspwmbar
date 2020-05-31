@@ -2,7 +2,7 @@
 # vim: st=2 sw=2 sts=2 et
 
 TAG="$(git describe --tags)"
-VERSION="${TAG:-0.0.0-dev}"
+VERSION="${TAG:-0.6.1}"
 PREFIX=/usr/local
 
 PKGCONFIG='pkg-config'
