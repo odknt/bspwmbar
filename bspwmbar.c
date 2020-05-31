@@ -162,6 +162,9 @@ typedef struct {
 	color_t *fg, *bg;
 } bspwmbar_t;
 
+/* temporary buffer */
+char buf[1024];
+
 static bspwmbar_t bar;
 static systray_t *tray;
 static poll_fd_t xfd;

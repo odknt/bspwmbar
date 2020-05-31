@@ -182,4 +182,7 @@ void systray(draw_context_t *, module_option_t *);
 void battery(draw_context_t *, module_option_t *);
 void backlight(draw_context_t *, module_option_t *);
 
+/* temporary buffer */
+extern char buf[1024];
+
 #endif

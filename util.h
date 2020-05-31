@@ -44,7 +44,4 @@ void list_del(list_head *head);
 /* Xlib error catch */
 xcb_atom_t xcb_atom_get(xcb_connection_t *, const char *, bool);
 
-/* temporary buffer */
-char buf[1024];
-
 #endif
