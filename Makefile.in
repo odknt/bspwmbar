@@ -12,23 +12,18 @@ CFLAGS   =${CFLAGS}
 LDFLAGS  =${LDFLAGS}
 DCFLAGS  =${DCFLAGS}
 DLDFLAGS =${DLDFLAGS}
-DEPCFLAGS=${DEPCFLAGS}
-DEPLIBS  =${DEPLIBS}
 
 CC=cc
 
 MODS=${MODS}
 OBJ = bspwmbar.o util.o systray.o $(MODS:=.o)
 
-bspwmbar: $(OBJ)
-	$(CC) -o $@ $(OBJ) $(CFLAGS) $(DEPCFLAGS) $(DEPLIBS) $(LDFLAGS) -DVERSION='"$(VERSION)"'
+bspwmbar: config.h util.h bspwmbar.h $(OBJ)
+	$(CC) -o $@ $(OBJ) $(CFLAGS) $(LDFLAGS) -DVERSION='"$(VERSION)"'
 
 debug:
 	@make CFLAGS="$(DCFLAGS)" LDFLAGS="$(DLDFLAGS)"
 .PHONY: debug
-
-%.o: %.c config.h util.h bspwmbar.h
-	$(CC) -o $@ -c $(CFLAGS) $(DEPCFLAGS) -DVERSION='"$(VERSION)"' $<
 
 config.h:
 	cp config.def.h $@
