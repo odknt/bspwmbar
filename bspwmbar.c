@@ -1097,6 +1097,9 @@ render_labels(draw_context_t *dc, label_t *labels, size_t nlabel)
 	int x = 0;
 
 	for (i = 0; i < nlabel; i++) {
+		if (!labels[i].option->any.func)
+			continue;
+
 		x = dc_get_x(dc);
 
 		draw_padding(dc, celwidth);
