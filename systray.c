@@ -341,7 +341,7 @@ systray_destroy(systray_t *tray)
 		return;
 	xcb_atom_t atom = get_systray_atom(tray->xcb);
 	if (atom)
-		xcb_set_selection_owner(tray->xcb, atom, XCB_NONE, XCB_TIME_CURRENT_TIME);
+		xcb_set_selection_owner(tray->xcb, XCB_NONE, atom, XCB_TIME_CURRENT_TIME);
 
 	list_head *pos, *tmp;
 	list_for_each_safe(&tray->items, pos, tmp) {
