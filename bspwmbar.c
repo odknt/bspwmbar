@@ -3,6 +3,7 @@
 #if defined(__linux)
 # define _XOPEN_SOURCE 700
 # include <alloca.h>
+# include <errno.h>
 # include <sys/epoll.h>
 # include <sys/timerfd.h>
 # include <sys/un.h>
@@ -1566,6 +1567,28 @@ xev_handle()
 	return res;
 }
 
+#if defined(__linux)
+/*
+ * epoll_wait_ignore_eintr()
+ *
+ * epoll_wait() wrapper to ignore EINTR errno
+ * EINTR errno can be set when the process was interrupted
+ * for example on breakpoint stop or when system goes to sleep
+ */
+int
+epoll_wait_ignore_eintr(int pfd, struct epoll_event *events, int maxevents, int timeout)
+{
+       int nfd;
+       errno = 0;
+       nfd = epoll_wait(pfd, events, maxevents, timeout);
+       if (nfd != -1)
+               return nfd;
+       if (errno == EINTR)
+               return 0;
+       return -1;
+}
+#endif
+
 /*
  * poll_loop() - polling loop
  * @handler: rendering function
@@ -1595,7 +1618,7 @@ poll_loop(void (* handler)())
 
 	/* polling fd */
 #if defined(__linux)
-	while ((nfd = epoll_wait(pfd, events, MAX_EVENTS, -1)) != -1) {
+	while ((nfd = epoll_wait_ignore_eintr(pfd, events, MAX_EVENTS, -1)) != -1) {
 		need_render = 0;
 #elif defined(__OpenBSD__)
 	struct timespec tspec = { 0 };
