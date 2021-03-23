@@ -1462,7 +1462,8 @@ poll_result_t
 timer_reset(int fd)
 {
 	uint64_t tcnt;
-	read(fd, &tcnt, sizeof(uint64_t));
+	if (read(fd, &tcnt, sizeof(uint64_t)) < 0)
+		return PR_FAILED;
 	return PR_UPDATE;
 }
 
