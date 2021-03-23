@@ -435,15 +435,17 @@ pixmap_new(xcb_connection_t *xcb, xcb_screen_t *scr, uint32_t width, uint32_t he
 {
 	xcb_shm_segment_info_t shm_info = { 0 };
 	xcb_pixmap_t xcb_pixmap = xcb_generate_id(xcb);
-	bool res = false;
+	xcb_generic_error_t *err = NULL;
 
-	if (xcb_shm_support(xcb))
-		res = xcb_create_pixmap_with_shm(xcb, scr, xcb_pixmap, width, height, &shm_info);
-	else
-		res = xcb_request_check(xcb, xcb_create_pixmap(xcb, scr->root_depth, xcb_pixmap, scr->root, width, height));
-
-	if (!res)
-		return NULL;
+	if (xcb_shm_support(xcb)) {
+		if (!xcb_create_pixmap_with_shm(xcb, scr, xcb_pixmap, width, height, &shm_info))
+			return NULL;
+	} else {
+		if ((err = xcb_request_check(xcb, xcb_create_pixmap_checked(xcb, scr->root_depth, xcb_pixmap, scr->root, width, height)))) {
+			free(err);
+			return NULL;
+		}
+	}
 
 	pixmap_t *pixmap = calloc(1, sizeof(pixmap_t));
 	pixmap->pixmap = xcb_pixmap;
@@ -459,6 +461,8 @@ pixmap_new(xcb_connection_t *xcb, xcb_screen_t *scr, uint32_t width, uint32_t he
 void
 pixmap_free(pixmap_t *pixmap)
 {
+	if (!pixmap)
+		return;
 	if (pixmap->shm_info.shmseg) {
 		/* if using shm */
 		xcb_shm_detach(bar.xcb, pixmap->shm_info.shmseg);
@@ -534,8 +538,10 @@ dc_init(draw_context_t *dc, xcb_connection_t *xcb, xcb_screen_t *scr, int x,
 	dc->visual = xcb_visualtype_get(scr);
 
 	/* create pixmap image for rendering */
-	dc->buf = pixmap_new(xcb, scr, width, height);
-	dc->tmp = pixmap_new(xcb, scr, width, height);
+	if (!(dc->buf = pixmap_new(xcb, scr, width, height)))
+		return false;
+	if (!(dc->tmp = pixmap_new(xcb, scr, width, height)))
+		return false;
 
 	/* create cairo context */
 	pict_reply = xcb_render_query_pict_formats_reply(xcb, xcb_render_query_pict_formats(xcb), NULL);
