@@ -1550,6 +1550,7 @@ xev_handle()
 			prop = (xcb_property_notify_event_t *)event;
 			if (prop->atom == xembed_info) {
 				systray_handle(tray, event);
+				res = PR_UPDATE;
 			} else if (is_change_active_window_event(prop) || prop->atom == ewmh._NET_WM_NAME) {
 				windowtitle_update(bar.xcb, 0);
 				res = PR_UPDATE;
