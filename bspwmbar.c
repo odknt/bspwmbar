@@ -1169,6 +1169,8 @@ calculate_systray_item_positions(label_t *label, module_option_t *opts)
 			values.height = opts->tray.iconsize;
 			if (!xcb_request_check(bar.xcb, xcb_configure_window_aux(bar.xcb, item->win, mask, &values)))
 				item->x = x;
+			if (!item->mapped)
+				item->mapped = xcb_request_check(bar.xcb, xcb_map_window(bar.xcb, item->win)) == NULL;
 		}
 		x += opts->tray.iconsize + celwidth;
 	}

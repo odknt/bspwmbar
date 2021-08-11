@@ -281,8 +281,6 @@ systray_handle(systray_t *tray, xcb_generic_event_t *ev)
 			}
 			if (xcb_request_check(tray->xcb, xcb_reparent_window(tray->xcb, win, tray->win, 0, 0)))
 				break;
-			if (xcb_request_check(tray->xcb, xcb_map_window(tray->xcb, win)))
-				break;
 
 			/* notify to the window */
 			xembed_embedded_notify(tray, win, 0);

@@ -3,6 +3,7 @@
 #ifndef SYSTRAY_H_
 #define SYSTRAY_H_
 
+#include <stdbool.h>
 #include <xcb/xcb.h>
 
 #include "util.h"
@@ -16,6 +17,7 @@ typedef struct _systray_item_t {
 	xcb_window_t win;
 	xembed_info_t info;
 	int x;
+	bool mapped;
 
 	list_head head;
 } systray_item_t;
