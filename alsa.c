@@ -5,6 +5,7 @@
 #include <xcb/xcb.h>
 
 #include "bspwmbar.h"
+#include "module.h"
 
 enum {
 	ALSACTL_GETINFO = 1,
@@ -25,16 +26,26 @@ static snd_ctl_t *ctl;
 static snd_mixer_t *mixer;
 static int initialized = 0;
 static alsa_info_t info = { 0 };
-static poll_fd_t pfd = { 0 };
+static struct bb_poll_option pfd = { 0 };
 
 /* functions */
 static void get_info(snd_mixer_elem_t *);
 static void toggle_mute(snd_mixer_elem_t *);
 static void set_volume(snd_mixer_elem_t *, long);
 static void alsa_control(uint8_t);
+
 static int alsa_connect();
-static int alsa_disconnect();
-static poll_result_t alsa_update(int);
+static void alsa_disconnect(int);
+static enum bb_poll_result alsa_update(int);
+
+void
+alsa_init()
+{
+	pfd.init = alsa_connect;
+	pfd.deinit = alsa_disconnect;
+	pfd.handler = alsa_update;
+	poll_add(&pfd);
+}
 
 void
 get_info(snd_mixer_elem_t *elem)
@@ -129,7 +140,7 @@ alsa_connect()
 	return pfds.fd;
 }
 
-poll_result_t
+enum bb_poll_result
 alsa_update(int fd)
 {
 	(void)fd;
@@ -152,28 +163,18 @@ alsa_update(int fd)
 	return PR_UPDATE;
 }
 
-int
-alsa_disconnect()
+void
+alsa_disconnect(int fd)
 {
-	return snd_ctl_close(ctl);
+	(void)fd;
+	snd_ctl_close(ctl);
 }
 
 void
-alsa_init()
-{
-	pfd.fd = alsa_connect();
-	pfd.init = alsa_connect;
-	pfd.deinit = alsa_disconnect;
-	pfd.handler = alsa_update;
-	poll_add(&pfd);
-}
-
-void
-volume(draw_context_t *dc, module_option_t *opts)
+volume(struct bb_draw_context *dc, union bb_module *opts)
 {
 	if (!pfd.fd)
 		alsa_init();
-
 	if (!opts->vol.prefix)
 		opts->vol.prefix = "";
 	if (!opts->vol.suffix)
@@ -186,7 +187,7 @@ volume(draw_context_t *dc, module_option_t *opts)
 	sprintf(buf, "%s%s %.0lf%s", opts->vol.prefix,  mark,
 	                             (double)info.volume / info.max * 100,
 	                             opts->vol.suffix);
-	draw_text(dc, buf);
+	bb_draw_text(dc, buf);
 }
 
 void

@@ -10,10 +10,11 @@
 #include <X11/Xlib.h>
 
 #include "bspwmbar.h"
+#include "module.h"
 #include "util.h"
 
 void
-datetime(draw_context_t *dc, module_option_t *opts)
+datetime(struct bb_draw_context *dc, union bb_module *opts)
 {
 	time_t timer = time(NULL);
 	struct tm *tptr = localtime(&timer);
@@ -31,5 +32,5 @@ datetime(draw_context_t *dc, module_option_t *opts)
 	         opts->date.suffix);
 	strftime(buf, sizeof(buf), format, tptr);
 
-	draw_text(dc, buf);
+	bb_draw_text(dc, buf);
 }

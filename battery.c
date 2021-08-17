@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "bspwmbar.h"
+#include "module.h"
 #include "util.h"
 
 typedef enum {
@@ -17,18 +18,18 @@ typedef enum {
 	BAT_FULL,
 } battery_status_t;
 
-typedef struct {
+struct bb_battery {
 	battery_status_t status;
 	uint32_t capacity;
-} battery_t;
+};
 
-static bool battery_load_info(battery_t *, const char *);
-static void battery_draw(battery_t *, draw_context_t *, module_option_t *);
+static bool battery_load_info(struct bb_battery *, const char *);
+static void battery_draw(struct bb_battery *, struct bb_draw_context *, union bb_module *);
 
-static battery_t bat;
+static struct bb_battery bat;
 
 void
-battery(draw_context_t *dc, module_option_t *opts)
+battery(struct bb_draw_context *dc, union bb_module *opts)
 {
 	static time_t prevtime;
 	time_t curtime;
@@ -48,7 +49,7 @@ battery(draw_context_t *dc, module_option_t *opts)
 }
 
 const char *
-battery_prefix(battery_t *bat, module_option_t *opts)
+battery_prefix(struct bb_battery *bat, union bb_module *opts)
 {
 	char *prefix = NULL;
 
@@ -82,13 +83,13 @@ battery_prefix(battery_t *bat, module_option_t *opts)
 }
 
 void
-battery_draw(battery_t *bat, draw_context_t *dc, module_option_t *opts)
+battery_draw(struct bb_battery *bat, struct bb_draw_context *dc, union bb_module *opts)
 {
 	sprintf(buf, "%s%d%s",
 		battery_prefix(bat, opts),
 		bat->capacity,
 		opts->battery.suffix ? opts->battery.suffix : "");
-	draw_text(dc, buf);
+	bb_draw_text(dc, buf);
 }
 
 #if defined(__linux__)
@@ -134,7 +135,7 @@ battery_parse_status(const char *str)
 }
 
 bool
-battery_load_info(battery_t *bat, const char *path)
+battery_load_info(struct bb_battery *bat, const char *path)
 {
 	FILE *fp;
 	char key[32] = { 0 };
@@ -175,7 +176,7 @@ battery_load_info(battery_t *bat, const char *path)
 #include <unistd.h>
 
 bool
-battery_load_info(battery_t *bat, const char *unused)
+battery_load_info(struct bb_battery *bat, const char *unused)
 {
 	struct apm_power_info info;
 	int fd;

@@ -15,10 +15,11 @@
 #endif
 
 #include "bspwmbar.h"
+#include "module.h"
 #include "util.h"
 
+struct bb_cpu_info {
 #if defined(__linux)
-typedef struct {
 	double user;
 	double nice;
 	double system;
@@ -27,14 +28,12 @@ typedef struct {
 	double irq;
 	double softirq;
 	double sum;
-} CoreInfo;
 #elif defined(__OpenBSD__)
-typedef struct {
 	uintmax_t states[CPUSTATES];
 	uintmax_t sum;
 	uintmax_t used;
-} CoreInfo;
 #endif
+};
 
 /* functions */
 static int num_procs();
@@ -72,8 +71,8 @@ num_procs()
 int
 cpu_perc(double **cores)
 {
-	static CoreInfo *a = NULL;
-	static CoreInfo *b = NULL;
+	static struct bb_cpu_info *a = NULL;
+	static struct bb_cpu_info *b = NULL;
 	static time_t prevtime;
 	int i = 0;
 	int nproc;
@@ -89,13 +88,13 @@ cpu_perc(double **cores)
 	prevtime = curtime;
 
 	if (a == NULL)
-		a = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
+		a = calloc(sizeof(struct bb_cpu_info), nproc);
 	if (b == NULL)
-		b = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
+		b = calloc(sizeof(struct bb_cpu_info), nproc);
 	if (loadavgs == NULL)
 		loadavgs = (double *)calloc(sizeof(double), nproc);
 
-	memcpy(b, a, sizeof(CoreInfo) * nproc);
+	memcpy(b, a, sizeof(struct bb_cpu_info) * nproc);
 
 #if defined(__linux)
 	FILE *fp;
@@ -147,22 +146,29 @@ cpu_perc(double **cores)
 }
 
 void
-cpugraph(draw_context_t *dc, module_option_t *opts)
+cpugraph(struct bb_draw_context *dc, union bb_module *opts)
 {
-	color_t *fgcols[4];
-	color_t *bgcol;
+	struct bb_graph_spec spec = {
+		.width = dc->fm->celwidth,
+		.height = dc->fm->font_size,
+		.prefix = opts->cpu.prefix ? opts->cpu.prefix : "",
+		.suffix = opts->cpu.suffix ? opts->cpu.suffix : "",
+		.padding = 1,
+	};
+	struct bb_color *fgcols[4];
+	struct bb_color *bgcol;
 	double *vals = NULL;
 	int i, ncore = cpu_perc(&vals);
 
-	bgcol = color_load("#555555");
+	bgcol = bb_color_load("#555555");
 	for (i = 0; i < 4; i++) {
 		if (opts->cpu.cols[i])
-			fgcols[i] = color_load(opts->cpu.cols[i]);
+			fgcols[i] = bb_color_load(opts->cpu.cols[i]);
 		else
-			fgcols[i] = color_load(deffgcols[i]);
+			fgcols[i] = bb_color_load(deffgcols[i]);
 	}
 
-	graph_item_t *items = (graph_item_t *)alloca(sizeof(graph_item_t) * ncore);
+	struct bb_graph_item *items = alloca(sizeof(struct bb_graph_item) * ncore);
 	for (int i = 0; i < ncore; i++) {
 		items[i].bg = bgcol;
 		items[i].val = vals[i];
@@ -177,7 +183,5 @@ cpugraph(draw_context_t *dc, module_option_t *opts)
 		}
 	}
 
-	if (!opts->cpu.prefix)
-		opts->cpu.prefix = "";
-	draw_bargraph(dc, opts->cpu.prefix, items, ncore);
+	bb_draw_bargraph(dc, &spec, ncore, items);
 }

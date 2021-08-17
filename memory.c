@@ -10,6 +10,7 @@
 #endif
 
 #include "bspwmbar.h"
+#include "module.h"
 #include "util.h"
 
 #if defined(__linux)
@@ -75,20 +76,27 @@ mem_perc()
 }
 
 void
-memgraph(draw_context_t *dc, module_option_t *opts)
+memgraph(struct bb_draw_context *dc, union bb_module *opts)
 {
-	graph_item_t items[10];
-	color_t *fgcols[4];
-	color_t *bgcol;
+	struct bb_graph_item items[10];
+	struct bb_graph_spec spec = {
+		.width = dc->fm->celwidth,
+		.height = dc->fm->font_size,
+		.prefix = opts->mem.prefix ? opts->mem.prefix : "",
+		.suffix = opts->mem.suffix ? opts->mem.suffix : "",
+		.padding = 1,
+	};
+	struct bb_color *fgcols[4];
+	struct bb_color *bgcol;
 	double used = mem_perc();
 	int i;
 
-	bgcol = color_load("#555555");
+	bgcol = bb_color_load("#555555");
 	for (i = 0; i < 4; i++) {
 		if (opts->mem.cols[i])
-			fgcols[i] = color_load(opts->cpu.cols[i]);
+			fgcols[i] = bb_color_load(opts->cpu.cols[i]);
 		else
-			fgcols[i] = color_load(deffgcols[i]);
+			fgcols[i] = bb_color_load(deffgcols[i]);
 	}
 
 	for (int i = 0; i < 10; i++) {
@@ -105,5 +113,5 @@ memgraph(draw_context_t *dc, module_option_t *opts)
 	}
 	if (!opts->mem.prefix)
 		opts->mem.prefix = "";
-	draw_bargraph(dc, opts->mem.prefix, items, 10);
+	bb_draw_bargraph(dc, &spec, 10, items);
 }

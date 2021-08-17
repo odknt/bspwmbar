@@ -12,6 +12,7 @@
 #include <xcb/randr.h>
 
 #include "bspwmbar.h"
+#include "module.h"
 #include "util.h"
 
 typedef struct {
@@ -29,7 +30,7 @@ static xcb_atom_t atom_backlight;
 static xcb_randr_output_t output_cache;
 
 void
-backlight(draw_context_t *dc, module_option_t *opts)
+backlight(struct bb_draw_context *dc, union bb_module *opts)
 {
 	backlight_t backlight = { 0 };
 	uint32_t blightness = 0;
@@ -40,7 +41,7 @@ backlight(draw_context_t *dc, module_option_t *opts)
 	blightness = (backlight.cur - backlight.min) * 100 / (backlight.max - backlight.min);
 
 	sprintf(buf, "%s%d%s", opts->backlight.prefix, blightness, opts->backlight.suffix);
-	draw_text(dc, buf);
+	bb_draw_text(dc, buf);
 }
 
 bool

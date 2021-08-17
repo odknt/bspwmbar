@@ -46,24 +46,16 @@ enum {
 	SYSTRAY_CANCEL_MESSAGE,
 };
 
-struct _systray_t {
-	xcb_connection_t *xcb;
-	xcb_screen_t *scr;
-	xcb_window_t win;
-	int icon_size;
-	list_head items;
-};
-
 /* functions */
 static bool xembed_send(xcb_connection_t *, xcb_window_t, long, long, long, long);
-static bool xembed_embedded_notify(systray_t *, xcb_window_t, long);
-static int xembed_unembed_window(systray_t *, xcb_window_t);
-static bool xembed_getinfo(systray_t *, xcb_window_t, xembed_info_t *);
+static bool xembed_embedded_notify(struct bb_systray *, xcb_window_t, long);
+static int xembed_unembed_window(struct bb_systray *, xcb_window_t);
+static bool xembed_getinfo(struct bb_systray *, xcb_window_t, xembed_info_t *);
 static xcb_atom_t get_systray_atom(xcb_connection_t *);
-static bool systray_set_selection_owner(systray_t *, xcb_atom_t);
-static bool systray_get_ownership(systray_t *);
-static systray_item_t *systray_append_item(systray_t *, xcb_window_t);
-static systray_item_t *systray_find_item(systray_t *, xcb_window_t);
+static bool bb_systray_set_selection_owner(struct bb_systray *, xcb_atom_t);
+static bool bb_systray_get_ownership(struct bb_systray *);
+static struct bb_systray_item *bb_systray_append_item(struct bb_systray *, xcb_window_t);
+static struct bb_systray_item *bb_systray_find_item(struct bb_systray *, xcb_window_t);
 
 xcb_atom_t
 get_systray_atom(xcb_connection_t *xcb)
@@ -76,7 +68,7 @@ get_systray_atom(xcb_connection_t *xcb)
 }
 
 bool
-systray_set_selection_owner(systray_t *tray, xcb_atom_t atom)
+bb_systray_set_selection_owner(struct bb_systray *tray, xcb_atom_t atom)
 {
 	return xcb_request_check(tray->xcb, xcb_set_selection_owner(tray->xcb, tray->win, atom, XCB_TIME_CURRENT_TIME)) == NULL;
 }
@@ -93,33 +85,33 @@ get_selection_owner(xcb_connection_t *xcb, xcb_atom_t atom)
 }
 
 bool
-systray_get_ownership(systray_t *tray)
+bb_systray_get_ownership(struct bb_systray *tray)
 {
 	xcb_atom_t atom = get_systray_atom(tray->xcb);
 	if (get_selection_owner(tray->xcb, atom))
 		return false;
 
-	return systray_set_selection_owner(tray, atom);
+	return bb_systray_set_selection_owner(tray, atom);
 }
 
 /**
- * systray_new() - Initialize systray_t *object.
+ * systray_new() - Initialize struct bb_systray *object.
  * @xcb: A display pointer of win.
  * @win: A window for system tray.
  *
  * Return: A new system tray object.
  */
-systray_t *
-systray_new(xcb_connection_t *xcb, xcb_screen_t *scr, xcb_window_t win)
+struct bb_systray *
+bb_systray_new(xcb_connection_t *xcb, xcb_screen_t *scr, xcb_window_t win)
 {
 	xcb_client_message_event_t ev = { 0 };
-	systray_t *tray = (systray_t *)calloc(1, sizeof(struct _systray_t));
+	struct bb_systray *tray = (struct bb_systray *)calloc(1, sizeof(struct bb_systray));
 	list_head_init(&tray->items);
 	tray->xcb = xcb;
 	tray->scr = scr;
 	tray->win = win;
 
-	if (!systray_get_ownership(tray)) {
+	if (!bb_systray_get_ownership(tray)) {
 		free(tray);
 		return NULL;
 	}
@@ -160,13 +152,13 @@ xembed_send(xcb_connection_t *xcb, xcb_window_t win, long message, long d1, long
 }
 
 bool
-xembed_embedded_notify(systray_t *tray, xcb_window_t win, long version)
+xembed_embedded_notify(struct bb_systray *tray, xcb_window_t win, long version)
 {
 	return xembed_send(tray->xcb, win, XEMBED_EMBEDDED_NOTIFY, 0, tray->win, version);
 }
 
 int
-xembed_unembed_window(systray_t *tray, xcb_window_t child)
+xembed_unembed_window(struct bb_systray *tray, xcb_window_t child)
 {
 	xcb_unmap_window(tray->xcb, child);
 	xcb_reparent_window(tray->xcb, child, tray->scr->root, 0, 0);
@@ -175,7 +167,7 @@ xembed_unembed_window(systray_t *tray, xcb_window_t child)
 }
 
 bool
-xembed_getinfo(systray_t *tray, xcb_window_t win, xembed_info_t *info)
+xembed_getinfo(struct bb_systray *tray, xcb_window_t win, xembed_info_t *info)
 {
 	xcb_atom_t infoatom;
 	xcb_get_property_reply_t *prop;
@@ -194,10 +186,10 @@ xembed_getinfo(systray_t *tray, xcb_window_t win, xembed_info_t *info)
 	return true;
 }
 
-systray_item_t *
-systray_append_item(systray_t *tray, xcb_window_t win)
+struct bb_systray_item *
+bb_systray_append_item(struct bb_systray *tray, xcb_window_t win)
 {
-	systray_item_t *item = calloc(1, sizeof(systray_item_t));
+	struct bb_systray_item *item = calloc(1, sizeof(struct bb_systray_item));
 	item->win = win;
 
 	list_add_tail(&tray->items, &item->head);
@@ -206,23 +198,23 @@ systray_append_item(systray_t *tray, xcb_window_t win)
 }
 
 void
-systray_set_icon_size(systray_t *tray, int size)
+bb_systray_set_icon_size(struct bb_systray *tray, int size)
 {
 	tray->icon_size = size;
 }
 
 int
-systray_icon_size(systray_t *tray)
+bb_systray_icon_size(struct bb_systray *tray)
 {
 	return tray->icon_size;
 }
 
-systray_item_t *
-systray_find_item(systray_t *tray, xcb_window_t win)
+struct bb_systray_item *
+bb_systray_find_item(struct bb_systray *tray, xcb_window_t win)
 {
 	list_head *pos;
 	list_for_each(&tray->items, pos) {
-		systray_item_t *item = list_entry(pos, systray_item_t, head);
+		struct bb_systray_item *item = list_entry(pos, struct bb_systray_item, head);
 		if (item->win == win)
 			return item;
 	}
@@ -230,11 +222,11 @@ systray_find_item(systray_t *tray, xcb_window_t win)
 }
 
 void
-systray_remove_item(systray_t *tray, xcb_window_t win)
+bb_systray_remove_item(struct bb_systray *tray, xcb_window_t win)
 {
 	list_head *pos;
 	list_for_each(&tray->items, pos) {
-		systray_item_t *item = list_entry(pos, systray_item_t, head);
+		struct bb_systray_item *item = list_entry(pos, struct bb_systray_item, head);
 		if (item->win == win) {
 			list_del(pos);
 			free(item);
@@ -244,7 +236,7 @@ systray_remove_item(systray_t *tray, xcb_window_t win)
 }
 
 int
-systray_handle(systray_t *tray, xcb_generic_event_t *ev)
+bb_systray_handle(struct bb_systray *tray, xcb_generic_event_t *ev)
 {
 	xcb_atom_t atom;
 	xcb_selection_clear_event_t *selection;
@@ -252,14 +244,14 @@ systray_handle(systray_t *tray, xcb_generic_event_t *ev)
 	xcb_property_notify_event_t *property;
 	xcb_change_window_attributes_value_list_t attrs = { 0 };
 	xcb_configure_window_value_list_t config = { 0 };
-	systray_item_t *item;
+	struct bb_systray_item *item;
 
 	switch (ev->response_type & ~0x80) {
 	case XCB_SELECTION_CLEAR:
 		selection = (xcb_selection_clear_event_t *)ev;
 		atom = get_systray_atom(tray->xcb);
 		if (selection->selection == atom)
-			systray_set_selection_owner(tray, get_systray_atom(tray->xcb));
+			bb_systray_set_selection_owner(tray, get_systray_atom(tray->xcb));
 		break;
 	case XCB_CLIENT_MESSAGE:
 		client = (xcb_client_message_event_t *)ev;
@@ -284,7 +276,7 @@ systray_handle(systray_t *tray, xcb_generic_event_t *ev)
 
 			/* notify to the window */
 			xembed_embedded_notify(tray, win, 0);
-			item = systray_append_item(tray, win);
+			item = bb_systray_append_item(tray, win);
 			xembed_getinfo(tray, win, &item->info);
 
 			break;
@@ -293,7 +285,7 @@ systray_handle(systray_t *tray, xcb_generic_event_t *ev)
 	case XCB_PROPERTY_NOTIFY:
 		property = (xcb_property_notify_event_t *)ev;
 		if (property->state == XCB_PROPERTY_NEW_VALUE) {
-			if (!(item = systray_find_item(tray, property->window)))
+			if (!(item = bb_systray_find_item(tray, property->window)))
 				return 1;
 			xembed_info_t info = { 0 };
 			xembed_getinfo(tray, property->window, &info);
@@ -315,25 +307,25 @@ systray_handle(systray_t *tray, xcb_generic_event_t *ev)
 }
 
 list_head *
-systray_get_items(systray_t *tray)
+bb_systray_get_items(struct bb_systray *tray)
 {
 	return &tray->items;
 }
 
 xcb_connection_t *
-systray_get_connection(systray_t *tray)
+bb_systray_get_connection(struct bb_systray *tray)
 {
 	return tray->xcb;
 }
 
 xcb_window_t
-systray_get_window(systray_t *tray)
+bb_systray_get_window(struct bb_systray *tray)
 {
 	return tray->win;
 }
 
 void
-systray_destroy(systray_t *tray)
+bb_systray_destroy(struct bb_systray *tray)
 {
 	if (!tray)
 		return;
@@ -343,7 +335,7 @@ systray_destroy(systray_t *tray)
 
 	list_head *pos, *tmp;
 	list_for_each_safe(&tray->items, pos, tmp) {
-		systray_item_t *item = list_entry(pos, systray_item_t, head);
+		struct bb_systray_item *item = list_entry(pos, struct bb_systray_item, head);
 		xembed_unembed_window(tray, item->win);
 		list_del(pos);
 		free(item);

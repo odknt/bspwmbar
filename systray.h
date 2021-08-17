@@ -1,7 +1,7 @@
 /* See LICENSE file for copyright and license details. */
 
-#ifndef SYSTRAY_H_
-#define SYSTRAY_H_
+#ifndef BSPWMBAR_SYSTRAY_H
+#define BSPWMBAR_SYSTRAY_H
 
 #include <stdbool.h>
 #include <xcb/xcb.h>
@@ -13,25 +13,26 @@ typedef struct {
 	unsigned long flags;
 } xembed_info_t;
 
-typedef struct _systray_item_t {
+struct bb_systray_item {
 	xcb_window_t win;
 	xembed_info_t info;
 	int x;
 	bool mapped;
 
 	list_head head;
-} systray_item_t;
+};
 
-typedef struct _systray_t systray_t;
+struct bb_systray {
+	xcb_connection_t *xcb;
+	xcb_screen_t *scr;
+	xcb_window_t win;
+	int icon_size;
+	list_head items;
+};
 
-systray_t *systray_new(xcb_connection_t *, xcb_screen_t *, xcb_window_t);
-int systray_handle(systray_t *, xcb_generic_event_t *);
-void systray_destroy(systray_t *);
-void systray_remove_item(systray_t *, xcb_window_t);
-xcb_window_t systray_get_window(systray_t *);
-xcb_connection_t *systray_get_connection(systray_t *);
-list_head *systray_get_items(systray_t *);
-int systray_icon_size(systray_t *);
-void systray_set_icon_size(systray_t *, int);
+struct bb_systray *bb_systray_new(xcb_connection_t *, xcb_screen_t *, xcb_window_t);
+int bb_systray_handle(struct bb_systray *, xcb_generic_event_t *);
+void bb_systray_destroy(struct bb_systray *);
+void bb_systray_remove_item(struct bb_systray *, xcb_window_t);
 
-#endif /* SYSTRAY_H_ */
+#endif /* BSPWMBAR_SYSTRAY_H */

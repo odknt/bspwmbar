@@ -7,10 +7,11 @@
 #include <time.h>
 
 #include "bspwmbar.h"
+#include "module.h"
 #include "util.h"
 
 void
-thermal(draw_context_t *dc, module_option_t *opts)
+thermal(struct bb_draw_context *dc, union bb_module *opts)
 {
 	static time_t prevtime;
 	static unsigned long temp;
@@ -40,5 +41,5 @@ DRAW_THERMAL:
 		opts->thermal.suffix = "";
 	sprintf(buf, "%s%lu%s", opts->thermal.prefix, temp / 1000,
 	        opts->thermal.suffix);
-	draw_text(dc, buf);
+	bb_draw_text(dc, buf);
 }

@@ -1,9 +1,9 @@
 /* See LICENSE file for copyright and license details. */
 
-#ifndef BSPWMBAR_CONFIG_H_
-#define BSPWMBAR_CONFIG_H_
+#ifndef BSPWMBAR_CONFIG_H
+#define BSPWMBAR_CONFIG_H
 
-#include "bspwmbar.h"
+#include "module.h"
 
 /* intel */
 #define THERMAL_PATH "/sys/class/thermal/thermal_zone0/temp"
@@ -37,7 +37,7 @@ const char *fontname = "sans-serif:size=10";
  */
 
 /* modules on the left */
-module_t left_modules[] = {
+union bb_module left_modules[] = {
 	{ /* Arch logo */
 		.text = {
 			.func = text,
@@ -63,7 +63,7 @@ module_t left_modules[] = {
 };
 
 /* modules on the right */
-module_t right_modules[] = {
+union bb_module right_modules[] = {
 	{ /* system tray */
 		.tray = {
 			.func = systray,

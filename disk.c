@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "bspwmbar.h"
+#include "module.h"
 #include "util.h"
 
 /* functions */
@@ -35,7 +36,7 @@ disk_perc(const char *mpoint)
 }
 
 void
-filesystem(draw_context_t *dc, module_option_t *opts)
+filesystem(struct bb_draw_context *dc, union bb_module *opts)
 {
 	int perc = disk_perc(opts->fs.mountpoint);
 	if (!opts->fs.prefix)
@@ -43,5 +44,5 @@ filesystem(draw_context_t *dc, module_option_t *opts)
 	if (!opts->fs.suffix)
 		opts->fs.suffix = "";
 	sprintf(buf, "%s%d%s", opts->fs.prefix, perc, opts->fs.suffix);
-	draw_text(dc, buf);
+	bb_draw_text(dc, buf);
 }

@@ -10,39 +10,27 @@
 
 #include "bspwmbar.h"
 #include "bspwm.h"
+#include "module.h"
 #include "util.h"
 
-struct _bspwm_desktop_t {
-	char *name;
-	bspwm_desktop_state_t state;
-
-	list_head head;
-};
-
-struct _bspwm_monitor_t {
-	char *name;
-	bool is_active;
-
-	/* cache of number of desktops */
-	list_head desktops;
-
-	list_head head;
-};
-
-typedef struct {
-	list_head monitors;
-} bspwm_t;
-
+static void bspwm_parse(const char *);
 static void bspwm_init();
 static int bspwm_connect();
-static int bspwm_disconnect();
-static int bspwm_send(const char*, size_t);
-static void bspwm_parse(const char *);
-static poll_result_t bspwm_handle(int);
+static void bspwm_disconnect(int);
+static enum bb_poll_result bspwm_handle(int);
 
 /* file descriptior for bspwm */
-static poll_fd_t pfd = { 0 };
-static bspwm_t *bspwm = NULL;
+static list_head monitors;
+static struct bb_poll_option pfd = { 0 };
+
+void
+bspwm_init()
+{
+	pfd.init = bspwm_connect;
+	pfd.deinit = bspwm_disconnect;
+	pfd.handler = bspwm_handle;
+	poll_add(&pfd);
+}
 
 /**
  * bspwm_connect() - connect to bspwm socket.
@@ -73,60 +61,30 @@ bspwm_connect()
 	if (connect(fd, (struct sockaddr *)&sock, sizeof(sock)) == -1)
 		return -1;
 
+	/* subscribe bspwm report */
+	send(fd, SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT), 0);
+
 	return fd;
 }
 
-int
-bspwm_disconnect()
+void
+bspwm_disconnect(int fd)
 {
-	bspwm_monitor_t *mon;
-	bspwm_desktop_t *desk;
+	struct bspwm_monitor *mon;
+	struct bspwm_desktop *desk;
 	list_head *cur, *tmp, *cur2, *tmp2;
 
-	close(pfd.fd);
-	list_for_each_safe(&bspwm->monitors, cur, tmp) {
-		mon = list_entry(cur, bspwm_monitor_t, head);
+	close(fd);
+	list_for_each_safe(&monitors, cur, tmp) {
+		mon = list_entry(cur, struct bspwm_monitor, head);
 		list_for_each_safe(&mon->desktops, cur2, tmp2) {
-			desk = list_entry(cur2, bspwm_desktop_t, head);
+			desk = list_entry(cur2, struct bspwm_desktop, head);
 			free(desk->name);
 			free(desk);
 		}
 		free(mon->name);
 		free(mon);
 	}
-	free(bspwm);
-	return 0;
-}
-
-void
-bspwm_init()
-{
-	bspwm = calloc(1, sizeof(bspwm_t));
-
-	list_head_init(&bspwm->monitors);
-
-	pfd.fd = bspwm_connect();
-	pfd.init = bspwm_connect;
-	pfd.deinit = bspwm_disconnect;
-	pfd.handler = bspwm_handle;
-	poll_add(&pfd);
-
-	/* subscribe bspwm report */
-	bspwm_send(SUBSCRIBE_REPORT, LENGTH(SUBSCRIBE_REPORT));
-}
-
-/**
- * bspwm_send() - send specified command to bspwm.
- * @bspwm: bspwm.
- * @cmd: bspwm command.
- * @len: length of cmd.
- *
- * Return: sent bytes length.
- */
-int
-bspwm_send(const char *cmd, size_t len)
-{
-	return send(pfd.fd, cmd, len, 0);
 }
 
 /**
@@ -139,10 +97,10 @@ bspwm_send(const char *cmd, size_t len)
  * 'F','U','O' - STATE_ACTIVE
  * not match   - STATE_FREE
  */
-bspwm_desktop_state_t
+enum bspwm_desktop_state
 bspwm_desktop_state_parse(char s)
 {
-	bspwm_desktop_state_t state = BSPWM_DESKTOP_FREE;
+	enum bspwm_desktop_state state = BSPWM_DESKTOP_FREE;
 	if ((s | 0x20) == 'o')
 		state = BSPWM_DESKTOP_OCCUPIED;
 	if ((s | 0x20) == 'u')
@@ -160,8 +118,8 @@ bspwm_parse(const char *report)
 	char tok;
 	list_head *cur;
 
-	bspwm_monitor_t *curmon = NULL, *mon = NULL;
-	bspwm_desktop_t *desktop = NULL, *desk = NULL;
+	struct bspwm_monitor *curmon = NULL, *mon = NULL;
+	struct bspwm_desktop *desktop = NULL, *desk = NULL;
 
 	for (i = 0; i < len; i++) {
 		switch (tok = report[i]) {
@@ -171,16 +129,16 @@ bspwm_parse(const char *report)
 			for (j = ++i; j < len; j++)
 				if (report[j] == ':')
 					break;
-			list_for_each(&bspwm->monitors, cur) {
-				mon = list_entry(cur, bspwm_monitor_t, head);
+			list_for_each(&monitors, cur) {
+				mon = list_entry(cur, struct bspwm_monitor, head);
 				if (!strncmp(mon->name, &report[i], j - i)) {
 					curmon = mon;
 					break;
 				}
 			}
 			if (!curmon) {
-				curmon = calloc(1, sizeof(bspwm_monitor_t));
-				list_add_tail(&bspwm->monitors, &curmon->head);
+				curmon = calloc(1, sizeof(struct bspwm_monitor));
+				list_add_tail(&monitors, &curmon->head);
 				curmon->name = strndup(&report[i], j - i);
 				curmon->name[j - i] = '\0';
 				list_head_init(&curmon->desktops);
@@ -199,14 +157,14 @@ bspwm_parse(const char *report)
 				if (report[j] == ':')
 					break;
 			list_for_each(&curmon->desktops, cur) {
-				desk = list_entry(cur, bspwm_desktop_t, head);
+				desk = list_entry(cur, struct bspwm_desktop, head);
 				if (!strncmp(desk->name, &report[i], j - i)) {
 					desktop = desk;
 					break;
 				}
 			}
 			if (!desktop) {
-				desktop = calloc(1, sizeof(bspwm_desktop_t));
+				desktop = calloc(1, sizeof(struct bspwm_desktop));
 				list_add_tail(&curmon->desktops, &desktop->head);
 				desktop->name = strndup(&report[i], j - i);
 				desktop->name[j - i] = '\0';
@@ -240,7 +198,7 @@ bspwm_parse(const char *report)
  * success and need rerendering     - PR_UPDATE
  * failed to read from fd           - PR_FAILED
  */
-poll_result_t
+enum bb_poll_result
 bspwm_handle(int fd)
 {
 	ssize_t len;
@@ -257,29 +215,30 @@ bspwm_handle(int fd)
 	return PR_FAILED;
 }
 
-bspwm_desktop_state_t
-bspwm_desktop_state(bspwm_desktop_t *desktop)
+enum bspwm_desktop_state
+bspwm_desktop_state(struct bspwm_desktop *desktop)
 {
 	return desktop->state;
 }
 
 void
-draw_desktop(draw_context_t *dc, bspwm_desktop_t *desktop, module_desktop_t *opts)
+draw_desktop(struct bb_draw_context *dc, struct bspwm_desktop *desktop, struct bb_module_desktop *opts)
 {
 	const char *ws;
-	bspwm_desktop_state_t state = bspwm_desktop_state(desktop);
+	enum bspwm_desktop_state state = bspwm_desktop_state(desktop);
 
-	color_t *col;
-	static color_t *fg = NULL, *fg_free = NULL;
+	struct bb_color *col;
+	static struct bb_color *fg = NULL;
+	static struct bb_color *fg_free = NULL;
 	if (!fg)
-		fg = opts->fg ? color_load(opts->fg) : color_default_fg();
+		fg = opts->fg ? bb_color_load(opts->fg) : dc->fgcolor;
 	if (!fg_free)
-		fg_free = opts->fg_free ? color_load(opts->fg_free) : color_default_fg();
+		fg_free = opts->fg_free ? bb_color_load(opts->fg_free) : dc->fgcolor;
 
 	ws = (state & BSPWM_DESKTOP_FOCUSED) ? opts->focused : opts->unfocused;
 	col = (state == BSPWM_DESKTOP_FREE) ? fg_free : fg;
 
-	draw_color_text(dc, col, ws);
+	bb_draw_color_text(dc, col, ws);
 }
 
 /**
@@ -288,28 +247,29 @@ draw_desktop(draw_context_t *dc, bspwm_desktop_t *desktop, module_desktop_t *opt
  * @opts: module options.
  */
 void
-desktops(draw_context_t *dc, module_option_t *opts)
+desktops(struct bb_draw_context *dc, union bb_module *opts)
 {
-	const char *name = draw_context_monitor_name(dc);
-	bspwm_monitor_t *mon = NULL;
-	bspwm_desktop_t *desktop;
+	struct bspwm_monitor *mon = NULL;
+	struct bspwm_desktop *desktop;
 	list_head *cur;
 
-	if (!bspwm)
+	if (!pfd.fd)
 		bspwm_init();
+	if (!monitors.next)
+		list_head_init(&monitors);
 
-	list_for_each(&bspwm->monitors, cur) {
-		mon = list_entry(cur, bspwm_monitor_t, head);
-		if (!strncmp(mon->name, name, strlen(name)))
+	list_for_each(&monitors, cur) {
+		mon = list_entry(cur, struct bspwm_monitor, head);
+		if (!strncmp(mon->name, dc->monitor_name, strlen(dc->monitor_name)))
 			break;
 	}
 	if (!mon)
 		return;
 
 	list_for_each(&mon->desktops, cur) {
-		desktop = list_entry(cur, bspwm_desktop_t, head);
+		desktop = list_entry(cur, struct bspwm_desktop, head);
 		draw_desktop(dc, desktop, &opts->desk);
 		if (&mon->desktops != cur->next)
-			draw_padding_em(dc, 1);
+			bb_draw_padding_em(dc, 1);
 	}
 }
