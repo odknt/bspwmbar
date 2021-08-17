@@ -193,10 +193,6 @@ bb_draw_load_glyphs(struct bb_draw_context *dc, const char *str, size_t nglyph, 
 	return num;
 }
 
-/**
- * bb_pixmap_free() - free pixmap_t
- * @pixmap: pixmap pointer.
- */
 void
 bb_pixmap_free(xcb_connection_t *xcb, struct bb_pixmap *pixmap)
 {
@@ -211,12 +207,6 @@ bb_pixmap_free(xcb_connection_t *xcb, struct bb_pixmap *pixmap)
 	free(pixmap);
 }
 
-/**
- * xcb_shm_support() - check shm extension is usable on the X server.
- * @xcb: xcb connection.
- *
- * Return: bool
- */
 bool
 xcb_shm_support(xcb_connection_t *xcb)
 {

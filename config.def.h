@@ -3,7 +3,7 @@
 #ifndef BSPWMBAR_CONFIG_H
 #define BSPWMBAR_CONFIG_H
 
-#include "module.h"
+#include "src/module.h"
 
 /* intel */
 #define THERMAL_PATH "/sys/class/thermal/thermal_zone0/temp"

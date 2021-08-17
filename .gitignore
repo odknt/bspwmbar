@@ -1,5 +1,4 @@
 *.o
-Makefile
 compile_commands.json
 config.h
 bspwmbar

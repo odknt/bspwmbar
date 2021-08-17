@@ -53,7 +53,6 @@ struct bb_draw_context {
 	struct bb_window *win;
 	struct bb_pixmap *buf;
 	struct bb_pixmap *tmp;
-	xcb_shm_segment_info_t shm_info;
 
 	int16_t x;
 	uint16_t width;

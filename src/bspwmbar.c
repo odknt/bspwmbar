@@ -47,14 +47,13 @@
 #include <harfbuzz/hb-ft.h>
 
 /* local headers */
-#define BSPWMBAR_POLL_MODULES
 #include "bspwmbar.h"
 #include "bspwm.h"
 #include "systray.h"
 #include "module.h"
 #include "draw.h"
 #include "font.h"
-#include "config.h"
+#include "../config.h"
 
 #if !defined(VERSION)
 # define VERSION "v0.0.0-dev"
@@ -152,8 +151,8 @@ static void windowtitle_update(xcb_connection_t *, uint8_t);
 static void calculate_systray_item_positions(struct bb_label *, union bb_module *);
 static void calculate_label_positions(struct bb_draw_context *, size_t, struct bb_label *, int);
 static void render();
-static bool bspwmbar_init(xcb_connection_t *, xcb_screen_t *);
-static void bspwmbar_destroy();
+static bool bb_init(xcb_connection_t *, xcb_screen_t *);
+static void bb_destroy();
 static void poll_init();
 static void poll_loop(void (*)());
 static enum bb_poll_result xev_handle();
@@ -518,7 +517,7 @@ render()
 }
 
 /**
- * bspwmbar_init() - initialize bspwmbar.
+ * bb_init() - initialize bspwmbar.
  * @dpy: display pointer.
  * @scr: screen number.
  *
@@ -527,7 +526,7 @@ render()
  * 1 - failure
  */
 bool
-bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
+bb_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 {
 	xcb_randr_get_monitors_reply_t *mon_reply;
 	xcb_randr_get_screen_resources_reply_t *screen_reply;
@@ -584,10 +583,10 @@ bspwmbar_init(xcb_connection_t *xcb, xcb_screen_t *scr)
 }
 
 /**
- * bspwmbar_destroy() - destroy all resources of bspwmbar.
+ * bb_destroy() - destroy all resources of bspwmbar.
  */
 void
-bspwmbar_destroy()
+bb_destroy()
 {
 	int i;
 
@@ -820,7 +819,7 @@ cleanup(xcb_connection_t *xcb)
 	}
 
 	free(cols);
-	bspwmbar_destroy();
+	bb_destroy();
 	xcb_ewmh_connection_wipe(&ewmh);
 	xcb_disconnect(xcb);
 	FcFini();
@@ -867,14 +866,14 @@ run()
 	/* get active widnow title */
 	windowtitle_update(xcb, 0);
 
-	if (!bspwmbar_init(xcb, scr)) {
-		err("bspwmbar_init(): Failed to init bspwmbar\n");
+	if (!bb_init(xcb, scr)) {
+		err("bb_init(): Failed to init bspwmbar\n");
 		goto CLEANUP;
 	}
 
 	/* tray initialize */
 	if (!(tray = bb_systray_new(xcb, scr, bar.dcs[0]->win->xw))) {
-		err("systray_new(): Selection already owned by other window\n");
+		err("bb_systray_new(): Selection already owned by other window\n");
 		goto CLEANUP;
 	}
 
