@@ -100,6 +100,7 @@ module_t right_modules[] = {
 	// 		.handler = backlight_ev,
 	// 		.prefix = "盛 ",
 	// 		.suffix = "％",
+	// 		.device = "/dev/backlight/backlight0",
 	// 	},
 	// },
 	{ /* master playback volume */

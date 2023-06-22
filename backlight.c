@@ -20,12 +20,9 @@ typedef struct {
 	int32_t cur;
 } backlight_t;
 
-static bool init_atom(xcb_connection_t *);
-static bool backlight_load(backlight_t *, xcb_connection_t *);
-static bool backlight_load_info(xcb_connection_t *, xcb_randr_output_t, backlight_t *);
+static bool backlight_load(backlight_t *, xcb_connection_t *, const char *dev);
 static void backlight_set(xcb_connection_t *, xcb_randr_output_t, int32_t);
 
-static xcb_atom_t atom_backlight;
 static xcb_randr_output_t output_cache;
 
 void
@@ -34,7 +31,7 @@ backlight(draw_context_t *dc, module_option_t *opts)
 	backlight_t backlight = { 0 };
 	uint32_t blightness = 0;
 
-	if (!backlight_load(&backlight, xcb_connection()))
+	if (!backlight_load(&backlight, xcb_connection(), opts->backlight.device))
 		return;
 
 	blightness = (backlight.cur - backlight.min) * 100 / (backlight.max - backlight.min);
@@ -43,12 +40,19 @@ backlight(draw_context_t *dc, module_option_t *opts)
 	draw_text(dc, buf);
 }
 
+#if defined(__linux) || defined(__OpenBSD__)
+static bool init_atom(xcb_connection_t *);
+static bool backlight_load_info(xcb_connection_t *, xcb_randr_output_t, backlight_t *);
+
+static xcb_atom_t atom_backlight;
+
 bool
-backlight_load(backlight_t *backlight, xcb_connection_t *xcb)
+backlight_load(backlight_t *backlight, xcb_connection_t *xcb, const char *unused)
 {
 	size_t i;
 	xcb_randr_get_screen_resources_reply_t *screen_reply;
 	xcb_randr_output_t *outputs;
+	(void)unused;
 
 	xcb_screen_t *scr = xcb_setup_roots_iterator(xcb_get_setup(xcb)).data;
 
@@ -108,41 +112,6 @@ backlight_set(xcb_connection_t *xcb, xcb_randr_output_t output, int32_t value)
 	xcb_randr_change_output_property(xcb, output, atom_backlight, XCB_ATOM_INTEGER, 32, XCB_PROP_MODE_REPLACE, 1, (unsigned char *)&value);
 }
 
-void
-backlight_ev(xcb_generic_event_t *ev)
-{
-	backlight_t backlight;
-	xcb_button_press_event_t *button;
-	int32_t cur, step;
-
-	xcb_connection_t *xcb = xcb_connection();
-	if (!backlight_load(&backlight, xcb))
-		return;
-
-	cur = (backlight.cur - backlight.min);
-	step = (backlight.max - backlight.min) * 0.05 + 1;
-
-	switch (ev->response_type & ~0x80) {
-	case XCB_BUTTON_PRESS:
-		button = (xcb_button_press_event_t *)ev;
-		switch (button->detail) {
-		case XCB_BUTTON_INDEX_4:
-			cur = (cur / step) * step + step;
-			if (cur > backlight.max)
-				cur = backlight.max;
-			backlight_set(xcb, output_cache, cur);
-			break;
-		case XCB_BUTTON_INDEX_5:
-			cur = (cur / step) * step - step;
-			if (cur < backlight.min)
-				cur = backlight.min;
-			backlight_set(xcb, output_cache, cur);
-			break;
-		}
-		break;
-	}
-}
-
 bool
 init_atom(xcb_connection_t *xcb)
 {
@@ -157,3 +126,93 @@ init_atom(xcb_connection_t *xcb)
 
 	return true;
 }
+
+#elif defined(__FreeBSD__)
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/backlight.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+static int fd = 0;
+
+bool
+backlight_load(backlight_t *backlight, xcb_connection_t *unused, const char *dev)
+{
+	if (dev == NULL)
+		return false;
+
+	struct backlight_props props;
+	(void)unused;
+
+	if (!fd && (fd = open(dev, O_RDWR)) < 0)
+		return false;
+
+	if (ioctl(fd, BACKLIGHTGETSTATUS, &props) < 0)
+	{
+		close(fd);
+		fd = 0;
+		return false;
+	}
+
+	backlight->min = 0;
+	backlight->max = BACKLIGHTMAXLEVELS;
+	backlight->cur = props.brightness;
+
+	return true;
+}
+
+void
+backlight_set(xcb_connection_t *xcb, xcb_randr_output_t output, int32_t value)
+{
+	(void)xcb;
+	(void)output;
+
+	if (!fd)
+		return;
+
+	struct backlight_props props = {
+		.brightness = value,
+	};
+
+	if (ioctl(fd, BACKLIGHTUPDATESTATUS, &props) < 0)
+		fprintf(stderr, "backlight_set(): ioctl() failed\n");
+}
+
+#endif
+
+void
+backlight_ev(xcb_generic_event_t *ev, module_option_t *opts)
+{
+	backlight_t backlight;
+	xcb_button_press_event_t *button;
+	double cur, step;
+
+	xcb_connection_t *xcb = xcb_connection();
+	if (!backlight_load(&backlight, xcb, opts->backlight.device))
+		return;
+
+	cur = (backlight.cur - backlight.min);
+	step = (double)(backlight.max - backlight.min) * 0.05 + 1;
+
+	switch (ev->response_type & ~0x80) {
+	case XCB_BUTTON_PRESS:
+		button = (xcb_button_press_event_t *)ev;
+		switch (button->detail) {
+		case XCB_BUTTON_INDEX_4:
+			cur = (cur / step) * step + step;
+			if (cur > backlight.max)
+				cur = backlight.max;
+			backlight_set(xcb, output_cache, (int32_t)cur);
+			break;
+		case XCB_BUTTON_INDEX_5:
+			cur = (cur / step) * step - step;
+			if (cur < backlight.min)
+				cur = backlight.min;
+			backlight_set(xcb, output_cache, (int32_t)cur);
+			break;
+		}
+		break;
+	}
+}
+

@@ -50,6 +50,9 @@ case $(uname -s) in
   OpenBSD)
     MODS="${MODS} volume"
     ;;
+  FreeBSD)
+    MODS="${MODS}"
+    ;;
 esac
 
 DEPCFLAGS="$("${PKGCONFIG}" --cflags "${DEPS}")"

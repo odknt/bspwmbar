@@ -1,4 +1,7 @@
 *.o
+*.core
+*.orig
+*.rej
 Makefile
 compile_commands.json
 config.h

@@ -8,10 +8,13 @@
 #if defined(__linux)
 # include <alloca.h>
 # include <sys/sysinfo.h>
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 # include <sys/types.h>
 # include <sys/sched.h>
 # include <sys/sysctl.h>
+#endif
+#if defined(__FreeBSD__)
+# include <sys/resource.h>
 #endif
 
 #include "bspwmbar.h"
@@ -28,7 +31,7 @@ typedef struct {
 	double softirq;
 	double sum;
 } CoreInfo;
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 typedef struct {
 	uintmax_t states[CPUSTATES];
 	uintmax_t sum;
@@ -59,7 +62,7 @@ num_procs()
 #if defined(__linux)
 	nproc = get_nprocs();
 	return nproc;
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 	int mibnproc[2] = { CTL_HW, HW_NCPU };
 	size_t len = sizeof(nproc);
 
@@ -121,16 +124,20 @@ cpu_perc(double **cores)
 		i++;
 	}
 	fclose(fp);
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 	int mibcpu[3] = { CTL_KERN, 0, 0 };
-	int miblen = 3;
+	size_t miblen = 3;
 	size_t len = sizeof(a[i].states);
+# if defined(__OpenBSD__)
 	if (nproc == 1) {
 		mibcpu[1] = KERN_CPTIME;
 		miblen = 2;
 	} else {
 		mibcpu[1] = KERN_CPTIME2;
 	}
+# elif defined(__FreeBSD__)
+	sysctlnametomib("kern.cp_time", mibcpu, &miblen);
+# endif
 	for (i = 0; i < nproc; i++) {
 		mibcpu[2] = i;
 		sysctl(mibcpu, miblen, &a[i].states, &len, NULL, 0);

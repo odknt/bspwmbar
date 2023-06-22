@@ -30,7 +30,7 @@ Currently required [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
 - [x] Emoji support (with color)
 - [x] Ligature support
 - [x] OpenBSD support
-- [ ] FreeBSD support
+- [x] FreeBSD support
 - [ ] Pulseaudio support (The priority is low because pulseaudio has alsa interface)
 
 ## Configure

@@ -7,7 +7,7 @@
 # include <sys/epoll.h>
 # include <sys/timerfd.h>
 # include <sys/un.h>
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 # include <sys/types.h>
 # include <sys/event.h>
 # include <sys/time.h>
@@ -196,7 +196,7 @@ static char *wintitle = NULL;
 static int pfd = 0;
 #if defined(__linux)
 static struct epoll_event events[MAX_EVENTS];
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 static struct kevent events[MAX_EVENTS];
 #endif
 static list_head pollfds;
@@ -1408,7 +1408,7 @@ poll_add(poll_fd_t *pollfd)
 
 	if (epoll_ctl(pfd, EPOLL_CTL_ADD, pollfd->fd, &ev) == -1)
 		die("epoll_ctl(): failed to add to epoll\n");
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 	struct kevent ev = { 0 };
 
 	EV_SET(&ev, pollfd->fd, EVFILT_READ, EV_ADD, 0, 0, pollfd);
@@ -1431,7 +1431,7 @@ poll_del(poll_fd_t *pollfd)
 	if (pollfd->fd) {
 #if defined(__linux)
 		epoll_ctl(pfd, EPOLL_CTL_DEL, pollfd->fd, NULL);
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 		struct kevent ev = { 0 };
 		EV_SET(&ev, pollfd->fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
 		kevent(pfd, &ev, 1, NULL, 0, NULL);
@@ -1489,18 +1489,20 @@ xcb_event_notify(xcb_generic_event_t *event, draw_context_t *dc)
 	size_t i;
 	xcb_button_press_event_t *button = (xcb_button_press_event_t *)event;
 	for (i = 0; i < LENGTH(left_modules); i++) {
-		if (!dc->left_labels[i].option->any.handler)
+		module_option_t *opt = dc->left_labels[i].option;
+		if (!opt->any.handler)
 			continue;
 		if (IS_LABEL_EVENT(dc->left_labels[i], button)) {
-			dc->left_labels[i].option->any.handler(event);
+			opt->any.handler(event, opt);
 			return PR_UPDATE;
 		}
 	}
 	for (i = 0; i < LENGTH(right_modules); i++) {
-		if (!dc->right_labels[i].option->any.handler)
+		module_option_t *opt = dc->right_labels[i].option;
+		if (!opt->any.handler)
 			continue;
 		if (IS_LABEL_EVENT(dc->right_labels[i], button)) {
-			dc->right_labels[i].option->any.handler(event);
+			opt->any.handler(event, opt);
 			return PR_UPDATE;
 		}
 	}
@@ -1633,7 +1635,7 @@ poll_loop(void (* handler)())
 #if defined(__linux)
 	while ((nfd = epoll_wait_ignore_eintr(pfd, events, MAX_EVENTS, -1)) != -1) {
 		need_render = 0;
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 	struct timespec tspec = { 0 };
 	tspec.tv_sec = 1;
 	while ((nfd = kevent(pfd, NULL, 0, events, MAX_EVENTS, &tspec)) != -1) {
@@ -1644,7 +1646,7 @@ poll_loop(void (* handler)())
 		for (i = 0; i < nfd; i++) {
 #if defined(__linux)
 			pollfd = (poll_fd_t *)events[i].data.ptr;
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 			pollfd = (poll_fd_t *)events[i].udata;
 #endif
 			switch ((int)pollfd->handler(pollfd->fd)) {
@@ -1760,7 +1762,7 @@ run()
 		err("epoll_create1(): Failed to create epoll fd\n");
 		goto CLEANUP;
 	}
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 	if (!(pfd = kqueue())) {
 		err("kqueue(): Failed to create kqueue fd\n");
 		goto CLEANUP;

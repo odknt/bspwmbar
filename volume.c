@@ -153,10 +153,11 @@ set_volume(int fd, int vol)
 }
 
 void
-volume_ev(xcb_generic_event_t *ev)
+volume_ev(xcb_generic_event_t *ev, module_option_t *unused)
 {
 	xcb_button_press_event_t *button;
 	int fd, vol;
+	(void)unused;
 
 	if ((fd = open(file, O_RDWR)) < 0)
 		die("volume: failed to open %s\n", file);
