@@ -5,13 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#if defined(__OpenBSD__) || defined(__FreeBSD__)
-# include <sys/sysctl.h>
-#endif
 #if defined(__FreeBSD__)
 # include <sys/types.h>
 # include <sys/resource.h>
 # include <vm/vm_param.h>
+#endif
+#if defined(__OpenBSD__) || defined(__FreeBSD__)
+# include <sys/sysctl.h>
 #endif
 
 #include "bspwmbar.h"
