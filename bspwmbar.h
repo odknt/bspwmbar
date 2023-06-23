@@ -137,6 +137,10 @@ typedef struct {
 	char *device;
 } module_backlight_t;
 
+typedef struct {
+	MODULE_BASE;
+} module_xbacklight_t;
+
 union _module_t {
 	module_any_t any;
 	module_systray_t tray;
@@ -151,6 +155,7 @@ union _module_t {
 	module_thermal_t thermal;
 	module_battery_t battery;
 	module_backlight_t backlight;
+	module_xbacklight_t xbacklight;
 };
 
 xcb_connection_t *xcb_connection();
@@ -169,6 +174,7 @@ void draw_padding_em(draw_context_t *, double);
 /* handler */
 void volume_ev(xcb_generic_event_t *, module_option_t *);
 void backlight_ev(xcb_generic_event_t *, module_option_t *);
+void xbacklight_ev(xcb_generic_event_t *, module_option_t *);
 
 /* modules */
 void text(draw_context_t *, module_option_t *);
@@ -183,6 +189,7 @@ void memgraph(draw_context_t *, module_option_t *);
 void systray(draw_context_t *, module_option_t *);
 void battery(draw_context_t *, module_option_t *);
 void backlight(draw_context_t *, module_option_t *);
+void xbacklight(draw_context_t *, module_option_t *);
 
 /* temporary buffer */
 extern char buf[1024];

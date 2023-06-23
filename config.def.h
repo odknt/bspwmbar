@@ -94,13 +94,21 @@ module_t right_modules[] = {
 	// 		.path = "/sys/class/power_supply/BAT0/uevent",
 	// 	},
 	// },
-	// { /* backlight */
+	// { /* device-based backlight */
 	// 	.backlight = {
 	// 		.func = backlight,
 	// 		.handler = backlight_ev,
 	// 		.prefix = "盛 ",
 	// 		.suffix = "％",
 	// 		.device = "/dev/backlight/backlight0",
+	// 	},
+	// },
+	// { /* x-based backlight */
+	// 	.xbacklight = {
+	// 		.func = xbacklight,
+	// 		.handler = xbacklight_ev,
+	// 		.prefix = "盛 ",
+	// 		.suffix = "％",
 	// 	},
 	// },
 	{ /* master playback volume */

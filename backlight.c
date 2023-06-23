@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include <xcb/xcb.h>
 #include <xcb/randr.h>
@@ -20,8 +22,8 @@ typedef struct {
 	int32_t cur;
 } backlight_t;
 
-static bool backlight_load(backlight_t *, xcb_connection_t *, const char *dev);
-static void backlight_set(xcb_connection_t *, xcb_randr_output_t, int32_t);
+static bool backlight_load(backlight_t *, const char *dev);
+static void backlight_set(int32_t);
 
 static xcb_randr_output_t output_cache;
 
@@ -31,119 +33,141 @@ backlight(draw_context_t *dc, module_option_t *opts)
 	backlight_t backlight = { 0 };
 	uint32_t blightness = 0;
 
-	if (!backlight_load(&backlight, xcb_connection(), opts->backlight.device))
+	if (!backlight_load(&backlight, opts->backlight.device))
 		return;
 
-	blightness = (backlight.cur - backlight.min) * 100 / (backlight.max - backlight.min);
+	blightness = (double)(backlight.cur - backlight.min) * 100 / (double)(backlight.max - backlight.min);
 
 	sprintf(buf, "%s%d%s", opts->backlight.prefix, blightness, opts->backlight.suffix);
 	draw_text(dc, buf);
 }
 
-#if defined(__linux) || defined(__OpenBSD__)
-static bool init_atom(xcb_connection_t *);
-static bool backlight_load_info(xcb_connection_t *, xcb_randr_output_t, backlight_t *);
+#if defined(__linux)
 
-static xcb_atom_t atom_backlight;
+/*
+ * Backlight devices can be found under /sys/class/backlight/ on Linux
+ *
+ * Directory structure is as follows:
+ *
+ *   /sys/class/backlight/<device>/
+ *     actual_brightness
+ *     bl_power
+ *     brightness
+ *     max_brightness
+ *     scale
+ *     subsystem
+ *     type
+ *     uevent
+ *     device/ (symlink) -> ../../../<device id>
+ *     power/
+ *       autosuspend_delay_ms
+ *       control
+ *       runtime_active_time
+ *       runtime_status
+ *       runtime_suspend_time
+ *     subsystem/ (symlink) -> ../../../../../class/backlight
+ *
+ */
 
-bool
-backlight_load(backlight_t *backlight, xcb_connection_t *xcb, const char *unused)
+static int bfd = -1;
+static int mbfd = -1;
+
+void
+truncto(char *str, char c)
 {
-	size_t i;
-	xcb_randr_get_screen_resources_reply_t *screen_reply;
-	xcb_randr_output_t *outputs;
-	(void)unused;
-
-	xcb_screen_t *scr = xcb_setup_roots_iterator(xcb_get_setup(xcb)).data;
-
-	screen_reply = xcb_randr_get_screen_resources_reply(xcb, xcb_randr_get_screen_resources(xcb, scr->root), NULL);
-	outputs = xcb_randr_get_screen_resources_outputs(screen_reply);
-
-	for (i = 0; i < screen_reply->num_outputs; i++) {
-		if (backlight_load_info(xcb, outputs[i], backlight)) {
-			output_cache = outputs[i];
-			break;
-		}
-	}
-	free(screen_reply);
-
-	return true;
+	char *tmp = str;
+	for (; *tmp != '\0'; tmp++)
+		if (*tmp == c)
+			*tmp = '\0';
 }
 
 bool
-backlight_load_info(xcb_connection_t *xcb, xcb_randr_output_t output, backlight_t *backlight)
+backlight_load(backlight_t *backlight, const char *dev)
 {
-	xcb_randr_get_output_property_reply_t *prop_reply;
-	xcb_randr_query_output_property_reply_t *query_reply;
-	int32_t cur, *values;
+	char bbuf[3];
+	char mbbuf[3];
 
-	/* get atom for backlight */
-	if (!atom_backlight && !init_atom(xcb))
+	char *bdev = malloc(strlen(dev) + strlen("/brightness") + 1);
+	snprintf(bdev, sizeof(bdev), "%s/brightness", dev);
+	if (bfd < 0 && (bfd = open(bdev, O_RDWR)) < 0) {
+		free(bdev);
 		return false;
-
-	prop_reply = xcb_randr_get_output_property_reply(xcb, xcb_randr_get_output_property(xcb, output, atom_backlight, XCB_ATOM_NONE, 0, 4, 0, 0), NULL);
-	if (!prop_reply)
-		return false;
-	cur = *((int32_t *)xcb_randr_get_output_property_data(prop_reply));
-	free(prop_reply);
-
-	query_reply = xcb_randr_query_output_property_reply(xcb, xcb_randr_query_output_property(xcb, output, atom_backlight), NULL);
-	if (!query_reply)
-		return false;
-	if (query_reply->range && xcb_randr_query_output_property_valid_values_length(query_reply) == 2) {
-		backlight->cur = cur;
-		values = xcb_randr_query_output_property_valid_values(query_reply);
-
-		backlight->min = values[0];
-		backlight->max = values[1];
 	}
-	free(query_reply);
+	free(bdev);
+
+	if (read(bfd, bbuf, sizeof(bbuf)) < 0) {
+		close(bfd);
+		bfd = -1;
+		return false;
+	}
+	truncto(bbuf, '\n');
+	backlight->cur = atoi(bbuf);
+
+	char *mbdev = malloc(strlen(dev) + strlen("/max_brightness") + 1);
+	snprintf(mbdev, sizeof(mbdev), "%s/max_brightness", dev);
+	if (mbfd < 0 && (mbfd = open(mbdev, O_RDONLY)) < 0) {
+		free(mbdev);
+		return false;
+	}
+	free(mbdev);
+
+	if (read(mbfd, mbbuf, sizeof(mbbuf)) < 0) {
+		close(mbfd);
+		mbfd = -1;
+		return false;
+	}
+	truncto(mbbuf, '\n');
+	backlight->max = atoi(mbbuf);
+
+	backlight->min = 0;
 
 	return true;
 }
 
 void
-backlight_set(xcb_connection_t *xcb, xcb_randr_output_t output, int32_t value)
+backlight_set(int32_t value)
 {
-	/* get atom for backlight */
-	if (!atom_backlight && !init_atom(xcb))
+	if (bfd < 0)
 		return;
 
-	xcb_randr_change_output_property(xcb, output, atom_backlight, XCB_ATOM_INTEGER, 32, XCB_PROP_MODE_REPLACE, 1, (unsigned char *)&value);
+	char strval[3];
+	snprintf(strval, sizeof(strval), "%i", value);
+	if (write(bfd, strval, sizeof(strval)) < 0) {
+		close(bfd);
+		bfd = -1;
+	}
 }
 
+#elif defined(__OpenBSD__) // TODO
+
 bool
-init_atom(xcb_connection_t *xcb)
+backlight_load(backlight_t *backlight, const char *dev)
 {
-	xcb_intern_atom_reply_t *backlight_reply;
+	(void)backlight;
+	(void)dev;
+	return false;
+}
 
-	backlight_reply = xcb_intern_atom_reply(xcb, xcb_intern_atom(xcb, true, strlen("Backlight"), "Backlight"), NULL);
-	if (!backlight_reply)
-		return false;
-
-	atom_backlight = backlight_reply->atom;
-	free(backlight_reply);
-
-	return true;
+void
+backlight_set(int32_t value)
+{
+	(void)value;
 }
 
 #elif defined(__FreeBSD__)
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/backlight.h>
-#include <fcntl.h>
-#include <unistd.h>
 
 static int fd = 0;
 
 bool
-backlight_load(backlight_t *backlight, xcb_connection_t *unused, const char *dev)
+backlight_load(backlight_t *backlight, const char *dev)
 {
 	if (dev == NULL)
 		return false;
 
 	struct backlight_props props;
-	(void)unused;
 
 	if (!fd && (fd = open(dev, O_RDWR)) < 0)
 		return false;
@@ -163,11 +187,8 @@ backlight_load(backlight_t *backlight, xcb_connection_t *unused, const char *dev
 }
 
 void
-backlight_set(xcb_connection_t *xcb, xcb_randr_output_t output, int32_t value)
+backlight_set(int32_t value)
 {
-	(void)xcb;
-	(void)output;
-
 	if (!fd)
 		return;
 
@@ -175,8 +196,10 @@ backlight_set(xcb_connection_t *xcb, xcb_randr_output_t output, int32_t value)
 		.brightness = value,
 	};
 
-	if (ioctl(fd, BACKLIGHTUPDATESTATUS, &props) < 0)
-		fprintf(stderr, "backlight_set(): ioctl() failed\n");
+	if (ioctl(fd, BACKLIGHTUPDATESTATUS, &props) < 0) {
+		close(fd);
+		fd = 0;
+	}
 }
 
 #endif
@@ -188,8 +211,7 @@ backlight_ev(xcb_generic_event_t *ev, module_option_t *opts)
 	xcb_button_press_event_t *button;
 	double cur, step;
 
-	xcb_connection_t *xcb = xcb_connection();
-	if (!backlight_load(&backlight, xcb, opts->backlight.device))
+	if (!backlight_load(&backlight, opts->backlight.device))
 		return;
 
 	cur = (backlight.cur - backlight.min);
@@ -203,13 +225,13 @@ backlight_ev(xcb_generic_event_t *ev, module_option_t *opts)
 			cur = (cur / step) * step + step;
 			if (cur > backlight.max)
 				cur = backlight.max;
-			backlight_set(xcb, output_cache, (int32_t)cur);
+			backlight_set((int32_t)cur);
 			break;
 		case XCB_BUTTON_INDEX_5:
 			cur = (cur / step) * step - step;
 			if (cur < backlight.min)
 				cur = backlight.min;
-			backlight_set(xcb, output_cache, (int32_t)cur);
+			backlight_set((int32_t)cur);
 			break;
 		}
 		break;
