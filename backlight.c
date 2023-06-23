@@ -25,8 +25,6 @@ typedef struct {
 static bool backlight_load(backlight_t *, const char *dev);
 static void backlight_set(int32_t);
 
-static xcb_randr_output_t output_cache;
-
 void
 backlight(draw_context_t *dc, module_option_t *opts)
 {
@@ -69,55 +67,53 @@ backlight(draw_context_t *dc, module_option_t *opts)
  *
  */
 
+static char *bdev = NULL;
+static char *mbdev = NULL;
 static int bfd = -1;
 static int mbfd = -1;
-
-void
-truncto(char *str, char c)
-{
-	char *tmp = str;
-	for (; *tmp != '\0'; tmp++)
-		if (*tmp == c)
-			*tmp = '\0';
-}
 
 bool
 backlight_load(backlight_t *backlight, const char *dev)
 {
-	char bbuf[3];
-	char mbbuf[3];
-
-	char *bdev = malloc(strlen(dev) + strlen("/brightness") + 1);
-	snprintf(bdev, sizeof(bdev), "%s/brightness", dev);
-	if (bfd < 0 && (bfd = open(bdev, O_RDWR)) < 0) {
-		free(bdev);
+	if (dev == NULL)
 		return false;
+
+	char bbuf[4] = { 0 };
+	char mbbuf[4] = { 0 };
+
+	if (bdev == NULL) {
+		bdev = malloc(strlen(dev) + strlen("/brightness") + 1);
+		sprintf(bdev, "%s/brightness", dev);
 	}
-	free(bdev);
+
+	if ((bfd = open(bdev, O_RDWR)) < 0)
+		return false;
 
 	if (read(bfd, bbuf, sizeof(bbuf)) < 0) {
 		close(bfd);
-		bfd = -1;
 		return false;
 	}
-	truncto(bbuf, '\n');
-	backlight->cur = atoi(bbuf);
 
-	char *mbdev = malloc(strlen(dev) + strlen("/max_brightness") + 1);
-	snprintf(mbdev, sizeof(mbdev), "%s/max_brightness", dev);
-	if (mbfd < 0 && (mbfd = open(mbdev, O_RDONLY)) < 0) {
-		free(mbdev);
-		return false;
+	bbuf[3] = '\0';
+	backlight->cur = atoi(bbuf);
+	close(bfd);
+
+	if (mbdev == NULL) {
+		mbdev = malloc(strlen(dev) + strlen("/max_brightness") + 1);
+		sprintf(mbdev, "%s/max_brightness", dev);
 	}
-	free(mbdev);
+
+	if ((mbfd = open(mbdev, O_RDONLY)) < 0)
+		return false;
 
 	if (read(mbfd, mbbuf, sizeof(mbbuf)) < 0) {
 		close(mbfd);
-		mbfd = -1;
 		return false;
 	}
-	truncto(mbbuf, '\n');
+
+	mbbuf[3] = '\0';
 	backlight->max = atoi(mbbuf);
+	close(mbfd);
 
 	backlight->min = 0;
 
@@ -127,15 +123,14 @@ backlight_load(backlight_t *backlight, const char *dev)
 void
 backlight_set(int32_t value)
 {
-	if (bfd < 0)
+	char strval[4] = { 0 };
+	snprintf(strval, sizeof(strval), "%i", value);
+
+	if ((bfd = open(bdev, O_RDWR)) < 0)
 		return;
 
-	char strval[3];
-	snprintf(strval, sizeof(strval), "%i", value);
-	if (write(bfd, strval, sizeof(strval)) < 0) {
-		close(bfd);
-		bfd = -1;
-	}
+	(void)write(bfd, strval, sizeof(strval));
+	close(bfd);
 }
 
 #elif defined(__OpenBSD__) // TODO
@@ -159,7 +154,7 @@ backlight_set(int32_t value)
 #include <sys/ioctl.h>
 #include <sys/backlight.h>
 
-static int fd = 0;
+static int fd = -1;
 
 bool
 backlight_load(backlight_t *backlight, const char *dev)
@@ -169,13 +164,13 @@ backlight_load(backlight_t *backlight, const char *dev)
 
 	struct backlight_props props;
 
-	if (!fd && (fd = open(dev, O_RDWR)) < 0)
+	if (fd < 0 && (fd = open(dev, O_RDWR)) < 0)
 		return false;
 
 	if (ioctl(fd, BACKLIGHTGETSTATUS, &props) < 0)
 	{
 		close(fd);
-		fd = 0;
+		fd = -1;
 		return false;
 	}
 
@@ -189,7 +184,7 @@ backlight_load(backlight_t *backlight, const char *dev)
 void
 backlight_set(int32_t value)
 {
-	if (!fd)
+	if (fd < 0)
 		return;
 
 	struct backlight_props props = {
@@ -198,7 +193,7 @@ backlight_set(int32_t value)
 
 	if (ioctl(fd, BACKLIGHTUPDATESTATUS, &props) < 0) {
 		close(fd);
-		fd = 0;
+		fd = -1;
 	}
 }
 
