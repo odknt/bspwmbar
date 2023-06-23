@@ -190,9 +190,10 @@ volume(draw_context_t *dc, module_option_t *opts)
 }
 
 void
-volume_ev(xcb_generic_event_t *ev)
+volume_ev(xcb_generic_event_t *ev, module_option_t *unused)
 {
 	xcb_button_press_event_t *button;
+	(void)unused;
 	switch (ev->response_type & ~0x80) {
 	case XCB_BUTTON_PRESS:
 		button = (xcb_button_press_event_t *)ev;
