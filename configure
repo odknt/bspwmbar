@@ -51,7 +51,7 @@ case $(uname -s) in
     MODS="${MODS} volume"
     ;;
   FreeBSD)
-    MODS="${MODS}"
+    MODS="${MODS} mixer"
     ;;
 esac
 
