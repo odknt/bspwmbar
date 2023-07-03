@@ -30,6 +30,7 @@ typedef struct {
 	uint64_t free;
 	uint64_t inactive;
 	uint64_t cache;
+	uint64_t pagesize;
 } MemInfo;
 #endif
 
@@ -52,7 +53,7 @@ calc_used(MemInfo mem)
 #elif defined(__OpenBSD__)
 	return (double)mem.active / mem.npages;
 #elif defined(__FreeBSD__)
-	return (double)(mem.inactive + mem.free + mem.cache) / mem.total;
+	return (double)(mem.total - ((mem.inactive + mem.free + mem.cache) * mem.pagesize)) / mem.total;
 #endif
 }
 
@@ -87,6 +88,8 @@ mem_perc()
 #elif defined(__FreeBSD__)
 	size_t len = sizeof(a.total); // all members are uint64_t, probably won't change
 	if (sysctlbyname("hw.physmem", &a.total, &len, NULL, 0) < 0)
+		return 0;
+	if (sysctlbyname("hw.pagesize", &a.pagesize, &len, NULL, 0) < 0)
 		return 0;
 	if (sysctlbyname("vm.stats.vm.v_free_count", &a.free, &len, NULL, 0) < 0)
 		return 0;
