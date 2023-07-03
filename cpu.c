@@ -62,13 +62,16 @@ num_procs()
 #if defined(__linux)
 	nproc = get_nprocs();
 	return nproc;
-#elif defined(__OpenBSD__) || defined(__FreeBSD__)
+#elif defined(__OpenBSD__)
 	int mibnproc[2] = { CTL_HW, HW_NCPU };
 	size_t len = sizeof(nproc);
 
 	if (sysctl(mibnproc, 2, &nproc, &len, NULL, 0) < 0)
 		return -1;
 	return nproc;
+/* the above works for FreeBSD, however we are only able to get cpu usage for the entire cpu from sysctl */
+#elif defined(__FreeBSD__)
+	return 1;
 #endif
 }
 
@@ -124,20 +127,18 @@ cpu_perc(double **cores)
 		i++;
 	}
 	fclose(fp);
-#elif defined(__OpenBSD__) || defined(__FreeBSD__)
+#elif defined(__OpenBSD__)
 	int mibcpu[3] = { CTL_KERN, 0, 0 };
 	size_t miblen = 3;
 	size_t len = sizeof(a[i].states);
-# if defined(__OpenBSD__)
+
 	if (nproc == 1) {
 		mibcpu[1] = KERN_CPTIME;
 		miblen = 2;
 	} else {
 		mibcpu[1] = KERN_CPTIME2;
 	}
-# elif defined(__FreeBSD__)
-	sysctlnametomib("kern.cp_time", mibcpu, &miblen);
-# endif
+
 	for (i = 0; i < nproc; i++) {
 		mibcpu[2] = i;
 		sysctl(mibcpu, miblen, &a[i].states, &len, NULL, 0);
@@ -145,8 +146,17 @@ cpu_perc(double **cores)
 		            a[i].states[CP_SYS] + a[i].states[CP_INTR] +
 		            a[i].states[CP_IDLE]);
 		a[i].used = a[i].sum - a[i].states[CP_IDLE];
-		loadavgs[i] = (a[i].used - b[i].used) / (a[i].sum - b[i].sum);
+		loadavgs[i] = (double)(a[i].used - b[i].used) / (a[i].sum - b[i].sum);
 	}
+#elif defined(__FreeBSD__)
+	size_t len = sizeof(a[i].states);
+
+	sysctlbyname("kern.cp_time", &a[0].states, &len, NULL, 0);
+	a[0].sum = (a[0].states[CP_USER] + a[0].states[CP_NICE] +
+				a[0].states[CP_SYS] + a[0].states[CP_INTR] +
+				a[0].states[CP_IDLE]);
+	a[0].used = a[0].sum - a[0].states[CP_IDLE];
+	loadavgs[i] = (double)(a[0].used - b[0].used) / (a[0].sum - b[0].sum);
 #endif
 
 	*cores = loadavgs;
