@@ -5,7 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#if defined(__OpenBSD__)
+#if defined(__FreeBSD__)
+# include <sys/types.h>
+# include <sys/resource.h>
+# include <vm/vm_param.h>
+#endif
+#if defined(__OpenBSD__) || defined(__FreeBSD__)
 # include <sys/sysctl.h>
 #endif
 
@@ -19,6 +24,14 @@ typedef struct {
 } MemInfo;
 #elif defined(__OpenBSD__)
 typedef struct uvmexp MemInfo;
+#elif defined(__FreeBSD__)
+typedef struct {
+	uint64_t total;
+	uint64_t free;
+	uint64_t inactive;
+	uint64_t cache;
+	uint64_t pagesize;
+} MemInfo;
 #endif
 
 /* functions */
@@ -39,6 +52,8 @@ calc_used(MemInfo mem)
 	return (double)(mem.total - mem.available) / mem.total;
 #elif defined(__OpenBSD__)
 	return (double)mem.active / mem.npages;
+#elif defined(__FreeBSD__)
+	return (double)(mem.total - ((mem.inactive + mem.free + mem.cache) * mem.pagesize)) / mem.total;
 #endif
 }
 
@@ -69,6 +84,18 @@ mem_perc()
 	int mib[] = { CTL_VM, VM_UVMEXP };
 	size_t len = sizeof(a);
 	if (sysctl(mib, 2, &a, &len, NULL, 0) < 0)
+		return 0;
+#elif defined(__FreeBSD__)
+	size_t len = sizeof(a.total); // all members are uint64_t, probably won't change
+	if (sysctlbyname("hw.physmem", &a.total, &len, NULL, 0) < 0)
+		return 0;
+	if (sysctlbyname("hw.pagesize", &a.pagesize, &len, NULL, 0) < 0)
+		return 0;
+	if (sysctlbyname("vm.stats.vm.v_free_count", &a.free, &len, NULL, 0) < 0)
+		return 0;
+	if (sysctlbyname("vm.stats.vm.v_inactive_count", &a.inactive, &len, NULL, 0) < 0)
+		return 0;
+	if (sysctlbyname("vm.stats.vm.v_cache_count", &a.cache, &len, NULL, 0) < 0)
 		return 0;
 #endif
 	return calc_used(a);

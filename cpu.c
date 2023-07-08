@@ -8,10 +8,13 @@
 #if defined(__linux)
 # include <alloca.h>
 # include <sys/sysinfo.h>
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 # include <sys/types.h>
 # include <sys/sched.h>
 # include <sys/sysctl.h>
+#endif
+#if defined(__FreeBSD__)
+# include <sys/resource.h>
 #endif
 
 #include "bspwmbar.h"
@@ -28,7 +31,7 @@ typedef struct {
 	double softirq;
 	double sum;
 } CoreInfo;
-#elif defined(__OpenBSD__)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__)
 typedef struct {
 	uintmax_t states[CPUSTATES];
 	uintmax_t sum;
@@ -66,6 +69,9 @@ num_procs()
 	if (sysctl(mibnproc, 2, &nproc, &len, NULL, 0) < 0)
 		return -1;
 	return nproc;
+/* the above works for FreeBSD, however we are only able to get cpu usage for the entire cpu from sysctl */
+#elif defined(__FreeBSD__)
+	return 1;
 #endif
 }
 
@@ -123,14 +129,16 @@ cpu_perc(double **cores)
 	fclose(fp);
 #elif defined(__OpenBSD__)
 	int mibcpu[3] = { CTL_KERN, 0, 0 };
-	int miblen = 3;
+	size_t miblen = 3;
 	size_t len = sizeof(a[i].states);
+
 	if (nproc == 1) {
 		mibcpu[1] = KERN_CPTIME;
 		miblen = 2;
 	} else {
 		mibcpu[1] = KERN_CPTIME2;
 	}
+
 	for (i = 0; i < nproc; i++) {
 		mibcpu[2] = i;
 		sysctl(mibcpu, miblen, &a[i].states, &len, NULL, 0);
@@ -138,8 +146,17 @@ cpu_perc(double **cores)
 		            a[i].states[CP_SYS] + a[i].states[CP_INTR] +
 		            a[i].states[CP_IDLE]);
 		a[i].used = a[i].sum - a[i].states[CP_IDLE];
-		loadavgs[i] = (a[i].used - b[i].used) / (a[i].sum - b[i].sum);
+		loadavgs[i] = (double)(a[i].used - b[i].used) / (a[i].sum - b[i].sum);
 	}
+#elif defined(__FreeBSD__)
+	size_t len = sizeof(a[i].states);
+
+	sysctlbyname("kern.cp_time", &a[0].states, &len, NULL, 0);
+	a[0].sum = (a[0].states[CP_USER] + a[0].states[CP_NICE] +
+				a[0].states[CP_SYS] + a[0].states[CP_INTR] +
+				a[0].states[CP_IDLE]);
+	a[0].used = a[0].sum - a[0].states[CP_IDLE];
+	loadavgs[i] = (double)(a[0].used - b[0].used) / (a[0].sum - b[0].sum);
 #endif
 
 	*cores = loadavgs;

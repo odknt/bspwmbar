@@ -177,15 +177,16 @@ battery_load_info(battery_t *bat, const char *path)
 bool
 battery_load_info(battery_t *bat, const char *unused)
 {
+	static int fd = 0;
 	struct apm_power_info info;
-	int fd;
 	(void)unused;
 
-	if ((fd = open("/dev/apm", O_RDONLY)) < 0)
+	if (!fd && (fd = open("/dev/apm", O_RDONLY)) < 0)
 		return false;
 
 	if (ioctl(fd, APM_IOC_GETPOWER, &info) < 0) {
 		close(fd);
+		fd = 0;
 		return false;
 	}
 
@@ -201,6 +202,46 @@ battery_load_info(battery_t *bat, const char *unused)
 	}
 
 	bat->capacity = info.battery_life;
+
+	return true;
+}
+
+#elif defined(__FreeBSD__)
+#include <fcntl.h>
+#include <machine/apm_bios.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+bool
+battery_load_info(battery_t *bat, const char *unused)
+{
+	static int fd = 0;
+	struct apm_info info;
+	(void)unused;
+
+	if (!fd && (fd = open("/dev/apm", O_RDONLY)) < 0)
+		return false;
+
+	if (ioctl(fd, APMIO_GETINFO, &info) < 0) {
+		close(fd);
+		fd = 0;
+		return false;
+	}
+
+	switch (info.ai_batt_stat) {
+	case APM_BATT_CHARGING:
+		bat->status = BAT_CHARGING;
+		break;
+	case APM_BATT_HIGH: // >=50%
+	case APM_BATT_LOW: // <50%
+	case APM_BATT_CRITICAL: // <5%
+		bat->status = BAT_DISCHARGING;
+		break;
+	default:
+		bat->status = BAT_UNKNOWN;
+	}
+
+	bat->capacity = info.ai_batt_life;
 
 	return true;
 }

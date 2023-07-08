@@ -7,7 +7,7 @@ PREFIX=/usr/local
 
 PKGCONFIG='pkg-config'
 DEPS='xcb xcb-ewmh xcb-util xcb-randr xcb-shm xcb-renderutil cairo harfbuzz fontconfig'
-MODS='bspwm cpu memory disk thermal datetime battery backlight'
+MODS='bspwm cpu memory disk thermal datetime battery backlight xbacklight'
 
 # debug flags
 CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -DNDEBUG'
@@ -49,6 +49,9 @@ case $(uname -s) in
     ;;
   OpenBSD)
     MODS="${MODS} volume"
+    ;;
+  FreeBSD)
+    MODS="${MODS} mixer"
     ;;
 esac
 

@@ -32,7 +32,7 @@ typedef module_t module_option_t;
 /* Draw context */
 typedef struct _draw_context_t draw_context_t;
 typedef void (* module_handler_t)(draw_context_t *, module_option_t *);
-typedef void (* event_handler_t)(xcb_generic_event_t *);
+typedef void (* event_handler_t)(xcb_generic_event_t *, module_option_t *);
 
 /* Poll */
 typedef int (* poll_init_handler_t)();
@@ -63,6 +63,12 @@ typedef struct {
 	char *muted;
 	char *unmuted;
 } module_volume_t;
+
+typedef struct {
+	MODULE_BASE;
+
+	char *device;
+} module_mixer_t;
 
 typedef struct {
 	MODULE_BASE;
@@ -133,7 +139,13 @@ typedef struct {
 
 typedef struct {
 	MODULE_BASE;
+
+	char *device;
 } module_backlight_t;
+
+typedef struct {
+	MODULE_BASE;
+} module_xbacklight_t;
 
 union _module_t {
 	module_any_t any;
@@ -141,6 +153,7 @@ union _module_t {
 	module_datetime_t date;
 	module_filesystem_t fs;
 	module_volume_t vol;
+	module_mixer_t mixer;
 	module_desktop_t desk;
 	module_text_t text;
 	module_graph_t cpu;
@@ -149,6 +162,7 @@ union _module_t {
 	module_thermal_t thermal;
 	module_battery_t battery;
 	module_backlight_t backlight;
+	module_xbacklight_t xbacklight;
 };
 
 xcb_connection_t *xcb_connection();
@@ -165,8 +179,10 @@ void draw_bargraph(draw_context_t *, const char *, graph_item_t *, int);
 void draw_padding_em(draw_context_t *, double);
 
 /* handler */
-void volume_ev(xcb_generic_event_t *);
-void backlight_ev(xcb_generic_event_t *);
+void volume_ev(xcb_generic_event_t *, module_option_t *);
+void mixer_ev(xcb_generic_event_t *, module_option_t *);
+void backlight_ev(xcb_generic_event_t *, module_option_t *);
+void xbacklight_ev(xcb_generic_event_t *, module_option_t *);
 
 /* modules */
 void text(draw_context_t *, module_option_t *);
@@ -175,12 +191,14 @@ void windowtitle(draw_context_t *, module_option_t *);
 void filesystem(draw_context_t *, module_option_t *);
 void thermal(draw_context_t *, module_option_t *);
 void volume(draw_context_t *, module_option_t *);
+void mixer(draw_context_t *, module_option_t *);
 void datetime(draw_context_t *, module_option_t *);
 void cpugraph(draw_context_t *, module_option_t *);
 void memgraph(draw_context_t *, module_option_t *);
 void systray(draw_context_t *, module_option_t *);
 void battery(draw_context_t *, module_option_t *);
 void backlight(draw_context_t *, module_option_t *);
+void xbacklight(draw_context_t *, module_option_t *);
 
 /* temporary buffer */
 extern char buf[1024];
