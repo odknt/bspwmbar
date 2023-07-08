@@ -22,7 +22,7 @@ typedef struct {
 } alsa_info_t;
 
 static snd_ctl_t *ctl;
-static snd_mixer_t *mixer;
+static snd_mixer_t *amixer;
 static int initialized = 0;
 static alsa_info_t info = { 0 };
 static poll_fd_t pfd = { 0 };
@@ -32,8 +32,8 @@ static void get_info(snd_mixer_elem_t *);
 static void toggle_mute(snd_mixer_elem_t *);
 static void set_volume(snd_mixer_elem_t *, long);
 static void alsa_control(uint8_t);
-static int alsa_connect();
-static int alsa_disconnect();
+static int alsa_connect(void);
+static int alsa_disconnect(void);
 static poll_result_t alsa_update(int);
 
 void
@@ -79,7 +79,7 @@ alsa_control(uint8_t ctlno)
 	snd_mixer_selem_id_alloca(&sid);
 	snd_mixer_selem_id_set_index(sid, 0);
 	snd_mixer_selem_id_set_name(sid, "Master");
-	if (!(elem = snd_mixer_find_selem(mixer, sid))) {
+	if (!(elem = snd_mixer_find_selem(amixer, sid))) {
 		info.max = 1;
 		return;
 	}
@@ -101,7 +101,7 @@ alsa_control(uint8_t ctlno)
 }
 
 int
-alsa_connect()
+alsa_connect(void)
 {
 	if (snd_ctl_open(&ctl, "default", SND_CTL_READONLY | SND_CTL_NONBLOCK))
 		return -1;
@@ -112,13 +112,13 @@ alsa_connect()
 	}
 
 	/* mixer initialization */
-	if (snd_mixer_open(&mixer, 0)) {
+	if (snd_mixer_open(&amixer, 0)) {
 		snd_ctl_close(ctl);
 		return -1;
 	}
-	snd_mixer_attach(mixer, "default");
-	snd_mixer_selem_register(mixer, NULL, NULL);
-	snd_mixer_load(mixer);
+	snd_mixer_attach(amixer, "default");
+	snd_mixer_selem_register(amixer, NULL, NULL);
+	snd_mixer_load(amixer);
 
 	/* get poll fd */
 	struct pollfd pfds;
@@ -141,7 +141,7 @@ alsa_update(int fd)
 	if (snd_ctl_event_get_type(event) != SND_CTL_EVENT_ELEM)
 		return PR_NOOP;
 
-	snd_mixer_handle_events(mixer);
+	snd_mixer_handle_events(amixer);
 
 	unsigned int mask = snd_ctl_event_elem_get_mask(event);
 	if (!(mask & SND_CTL_EVENT_MASK_VALUE))
@@ -153,13 +153,13 @@ alsa_update(int fd)
 }
 
 int
-alsa_disconnect()
+alsa_disconnect(void)
 {
 	return snd_ctl_close(ctl);
 }
 
 void
-alsa_init()
+alsa_init(void)
 {
 	pfd.fd = alsa_connect();
 	pfd.init = alsa_connect;
