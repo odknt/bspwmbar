@@ -270,14 +270,21 @@ draw_desktop(draw_context_t *dc, bspwm_desktop_t *desktop, module_desktop_t *opt
 	bspwm_desktop_state_t state = bspwm_desktop_state(desktop);
 
 	color_t *col;
-	static color_t *fg = NULL, *fg_free = NULL;
+	static color_t *fg = NULL, *fg_free = NULL, *fg_current = NULL;
 	if (!fg)
 		fg = opts->fg ? color_load(opts->fg) : color_default_fg();
 	if (!fg_free)
 		fg_free = opts->fg_free ? color_load(opts->fg_free) : color_default_fg();
+	if (!fg_current)
+		fg_current = opts->fg_current ? color_load(opts->fg_current) : color_default_fg();
 
 	ws = (state & BSPWM_DESKTOP_FOCUSED) ? opts->focused : opts->unfocused;
-	col = (state == BSPWM_DESKTOP_FREE) ? fg_free : fg;
+	if (state == BSPWM_DESKTOP_FREE)
+		col = fg_free;
+	else if (state & BSPWM_DESKTOP_FOCUSED)
+		col = fg_current;
+	else
+		col = fg;
 
 	draw_color_text(dc, col, ws);
 }

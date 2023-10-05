@@ -44,10 +44,10 @@ static int num_procs();
 static int cpu_perc(double **);
 
 static const char *deffgcols[4] = {
-	"#449f3d", /* success color */
-	"#2f8419", /* normal color */
-	"#f5a70a", /* warning color */
-	"#ed5456", /* critical color */
+	"#95a99f", /* success color */
+	"#74bd56", /* normal color */
+	"#ffdd33", /* warning color */
+	"#F43841", /* critical color */
 };
 static double *loadavgs = NULL;
 

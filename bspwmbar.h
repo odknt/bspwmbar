@@ -77,6 +77,7 @@ typedef struct {
 	char *unfocused;
 	char *fg;
 	char *fg_free;
+	char *fg_current;
 } module_desktop_t;
 
 typedef struct {
