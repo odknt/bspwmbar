@@ -77,7 +77,6 @@ typedef struct {
 	char *unfocused;
 	char *fg;
 	char *fg_free;
-	char *fg_current;
 } module_desktop_t;
 
 typedef struct {
@@ -148,6 +147,10 @@ typedef struct {
 	MODULE_BASE;
 } module_xbacklight_t;
 
+typedef struct {
+	MODULE_BASE;
+} module_wifi_t;
+
 union _module_t {
 	module_any_t any;
 	module_systray_t tray;
@@ -164,6 +167,7 @@ union _module_t {
 	module_battery_t battery;
 	module_backlight_t backlight;
 	module_xbacklight_t xbacklight;
+	module_wifi_t wifi;
 };
 
 xcb_connection_t *xcb_connection();
@@ -200,6 +204,7 @@ void systray(draw_context_t *, module_option_t *);
 void battery(draw_context_t *, module_option_t *);
 void backlight(draw_context_t *, module_option_t *);
 void xbacklight(draw_context_t *, module_option_t *);
+void wifi(draw_context_t *, module_option_t *);
 
 /* temporary buffer */
 extern char buf[1024];

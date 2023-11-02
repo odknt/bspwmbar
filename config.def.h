@@ -82,18 +82,24 @@ module_t right_modules[] = {
 			.prefix = "mem: "
 		},
 	},
-	// { /* battery */
-	// 	.battery = {
-	// 		.func = battery,
-	// 		.prefix = " ",
-	// 		.prefix_1 = " ",
-	// 		.prefix_2 = " ",
-	// 		.prefix_3 = " ",
-	// 		.prefix_4 = " ",
-	// 		.suffix = "％",
-	// 		.path = "/sys/class/power_supply/BAT0/uevent",
-	// 	},
-	// },
+	{ /* Wi-Fi */
+		.wifi = {
+			.func = wifi,
+            .prefix = "Wifi"     // Icon or text to display for>
+        },
+    },
+	{ /* battery */
+		.battery = {
+			.func = battery,
+			.prefix = " ",
+			.prefix_1 = " ",
+			.prefix_2 = " ",
+			.prefix_3 = " ",
+			.prefix_4 = " ",
+			.suffix = "％",
+			.path = "/sys/class/power_supply/BAT0/uevent",
+		},
+	},
 	// { /* device-based backlight */
 	// 	.backlight = {
 	// 		.func = backlight,
