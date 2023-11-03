@@ -86,7 +86,8 @@ module_t right_modules[] = {
 		.wifi = {
 			.func = wifi,
             .prefix = "Wifi",     // Icon or text to display for>
-			.show_ip = "true"
+			.show_ip = "true",
+			.disable_color = "false"
         },
     },
 	// { /* battery */

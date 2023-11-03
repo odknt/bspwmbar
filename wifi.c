@@ -47,14 +47,29 @@ void wifi(draw_context_t *dc, module_option_t *opts) {
     // Display Wi-Fi status and local IP address
     if (wifiConnected) {
         draw_text(dc, "Wi-Fi: ");
-        draw_color_text(dc, greenColor, ssid);
+
+        if (strcmp(wifi_opts->disable_color, "false") == 0) {
+            draw_color_text(dc, greenColor, ssid);
+        } else {
+            draw_text(dc, ssid);
+        }
 
         if (strcmp(wifi_opts->show_ip, "true") == 0) {
-            draw_text(dc, " | IP: ");
-            draw_color_text(dc, greenColor, ip);
+            if (strcmp(wifi_opts->disable_color, "false") == 0) {
+                draw_text(dc, " | IP: ");
+                draw_color_text(dc, greenColor, ip);
+            } else {
+                draw_text(dc, " | IP: ");
+                draw_text(dc, ip);
+            }
         }
     } else {
         draw_text(dc, "Wi-Fi: ");
-        draw_color_text(dc, redColor, "Disabled");
+
+        if (strcmp(wifi_opts->disable_color, "false") == 0) {
+            draw_color_text(dc, redColor, "Disabled");
+        } else {
+            draw_text(dc, "Disabled");
+        }
     }
 }
