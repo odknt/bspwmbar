@@ -8,6 +8,8 @@
 #define MAX_BUFFER_SIZE 256
 
 void wifi(draw_context_t *dc, module_option_t *opts) {
+    module_wifi_t *wifi_opts = (module_wifi_t *)opts;
+
     char status[MAX_BUFFER_SIZE] = {0};
     char ssid[MAX_BUFFER_SIZE] = {0};
     char ip[MAX_BUFFER_SIZE] = {0};
@@ -46,8 +48,11 @@ void wifi(draw_context_t *dc, module_option_t *opts) {
     if (wifiConnected) {
         draw_text(dc, "Wi-Fi: ");
         draw_color_text(dc, greenColor, ssid);
-        draw_text(dc, " | IP: ");
-        draw_color_text(dc, greenColor, ip);
+
+        if (strcmp(wifi_opts->show_ip, "true") == 0) {
+            draw_text(dc, " | IP: ");
+            draw_color_text(dc, greenColor, ip);
+        }
     } else {
         draw_text(dc, "Wi-Fi: ");
         draw_color_text(dc, redColor, "Disabled");

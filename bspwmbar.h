@@ -149,7 +149,10 @@ typedef struct {
 
 typedef struct {
 	MODULE_BASE;
+
+    const char *show_ip;
 } module_wifi_t;
+
 
 union _module_t {
 	module_any_t any;
