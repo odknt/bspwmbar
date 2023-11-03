@@ -102,19 +102,21 @@ typedef enum {
 static battery_key_t
 battery_parse_key(const char *str)
 {
-	if (!str)
-		return BAT_KEY_UNKNOWN;
+    if (!str)
+        return BAT_KEY_UNKNOWN;
 
-	if (!strncmp("POWER_SUPPLY_STATUS", str, strlen(str)))
-		return BAT_KEY_STATUS;
+    if (!strncmp("POWER_SUPPLY_STATUS", str, strlen(str)))
+        return BAT_KEY_STATUS;
 
-	if (!strncmp("POWER_SUPPLY_CHARGE_NOW", str, strlen(str)))
-		return BAT_KEY_SUPPLY_CHARGE_NOW;
+    if (!strncmp("POWER_SUPPLY_CHARGE_NOW", str, strlen(str))
+        || !strncmp("POWER_SUPPLY_ENERGY_NOW", str, strlen(str)))
+        return BAT_KEY_SUPPLY_CHARGE_NOW;
 
-	if (!strncmp("POWER_SUPPLY_CHARGE_FULL", str, strlen(str)))
-		return BAT_KEY_SUPPLY_CHARGE_FULL;
+    if (!strncmp("POWER_SUPPLY_CHARGE_FULL", str, strlen(str))
+        || !strncmp("POWER_SUPPLY_ENERGY_FULL", str, strlen(str)))
+        return BAT_KEY_SUPPLY_CHARGE_FULL;
 
-	return BAT_KEY_UNKNOWN;
+    return BAT_KEY_UNKNOWN;
 }
 
 static battery_status_t
