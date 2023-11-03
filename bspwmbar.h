@@ -151,7 +151,8 @@ typedef struct {
 	MODULE_BASE;
 
 	const char *disable_color;
-    const char *show_ip;
+	const char *show_ip;
+	const char *interface_name;
 } module_wifi_t;
 
 

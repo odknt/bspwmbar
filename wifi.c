@@ -15,9 +15,12 @@ void wifi(draw_context_t *dc, module_option_t *opts) {
     char ip[MAX_BUFFER_SIZE] = {0};
     bool wifiConnected = false;
 
+
     // Check Wi-Fi status
-    FILE *wifi_status = popen("iwconfig wlan0 | grep ESSID", "r");
-    if (wifi_status) {
+	char wifi_status_cmd[256];
+    snprintf(wifi_status_cmd, sizeof(wifi_status_cmd), "iwconfig %s | grep ESSID", wifi_opts->interface_name);
+    FILE *wifi_status = popen(wifi_status_cmd, "r");
+	if (wifi_status) {
         while (fgets(status, sizeof(status), wifi_status) != NULL) {
             char *essid = strstr(status, "ESSID:");
             if (essid) {
@@ -34,8 +37,10 @@ void wifi(draw_context_t *dc, module_option_t *opts) {
     }
 
     // Get local IP address
-    FILE *local_ip = popen("ip addr show wlan0 | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1 | tr -d '\n\r'", "r");
-    if (local_ip) {
+    char ip_cmd[256];
+    snprintf(ip_cmd, sizeof(ip_cmd), "ip addr show %s | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1 | tr -d '\n\r'", wifi_opts->interface_name);
+    FILE *local_ip = popen(ip_cmd, "r");
+	if (local_ip) {
         fgets(ip, sizeof(ip), local_ip);
         pclose(local_ip);
     }
