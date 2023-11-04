@@ -129,7 +129,7 @@ battery_parse_status(const char *str)
 	if (!str)
 		return BAT_UNKNOWN;
 
-	if (!strncmp("Discharging", str, strlen(str)))
+	if (!strncmp("Discharging", str, strlen(str)) && !strncmp("Not charging", str, strlen(str)))
 		return BAT_DISCHARGING;
 	if (!strncmp("Charging", str, strlen(str)))
 		return BAT_CHARGING;
