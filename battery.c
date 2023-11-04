@@ -52,7 +52,7 @@ battery_prefix(battery_t *bat, module_option_t *opts)
 {
 	char *prefix = NULL;
 
-	if(bat->status == BAT_CHARGING && strcmp(opts->battery.charging_prefix,"true") == 0){
+	if(bat->status == BAT_CHARGING && strcmp(opts->battery.enable_charging_prefix,"true") == 0){
 		return opts->battery.prefix_charging;
 	}
 
