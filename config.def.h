@@ -99,9 +99,11 @@ module_t right_modules[] = {
 	// 		.prefix_2 = " ",
 	// 		.prefix_3 = " ",
 	// 		.prefix_4 = " ",
-	// 		.suffix = "％",
-	// 		.path = "/sys/class/power_supply/BAT0/uevent",
-	// 	},
+	//		.prefix_charging = "⚡ ",
+	//		.charging_prefix = "false",
+	//		.suffix = "％",
+	//		.path = "/sys/class/power_supply/BAT0/uevent",
+	//	},
 	// },
 	// { /* device-based backlight */
 	// 	.backlight = {

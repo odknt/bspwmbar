@@ -134,6 +134,8 @@ typedef struct {
 	char *prefix_2;
 	char *prefix_3;
 	char *prefix_4;
+	char *prefix_charging;
+	char *charging_prefix;
 	char *path;
 } module_battery_t;
 
