@@ -82,6 +82,15 @@ module_t right_modules[] = {
 			.prefix = "mem: "
 		},
 	},
+	{ /* Wi-Fi */
+		.wifi = {
+			.func = wifi,
+            .prefix = "Wifi",     // Icon or text to display for>
+			.show_ip = "true",
+			.disable_color = "false",
+			.interface_name = "wlan0"
+        },
+    },
 	// { /* battery */
 	// 	.battery = {
 	// 		.func = battery,
@@ -90,9 +99,11 @@ module_t right_modules[] = {
 	// 		.prefix_2 = " ",
 	// 		.prefix_3 = " ",
 	// 		.prefix_4 = " ",
-	// 		.suffix = "％",
-	// 		.path = "/sys/class/power_supply/BAT0/uevent",
-	// 	},
+	//		.prefix_charging = "⚡ ",
+	//		.enable_charging_prefix = "false",
+	//		.suffix = "％",
+	//		.path = "/sys/class/power_supply/BAT0/uevent",
+	//	},
 	// },
 	// { /* device-based backlight */
 	// 	.backlight = {
