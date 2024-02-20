@@ -98,7 +98,7 @@ module_t right_modules[] = {
 	// 	.backlight = {
 	// 		.func = backlight,
 	// 		.handler = backlight_ev,
-	// 		.prefix = "盛 ",
+	// 		.prefix = "󱩎 ",
 	// 		.suffix = "％",
 	// 		.device = "/dev/backlight/backlight0",
 	// 	},
@@ -107,7 +107,7 @@ module_t right_modules[] = {
 	// 	.xbacklight = {
 	// 		.func = xbacklight,
 	// 		.handler = xbacklight_ev,
-	// 		.prefix = "盛 ",
+	// 		.prefix = "󱩎 ",
 	// 		.suffix = "％",
 	// 	},
 	// },
@@ -116,15 +116,15 @@ module_t right_modules[] = {
 			.func = volume,
 			.handler = volume_ev,
 			.suffix = "％",
-			.muted = "婢",
-			.unmuted = "墳",
+			.muted = "󰖁",
+			.unmuted = "󰕾",
 		},
 	},
 	{ /* used space of root file system */
 		.fs = {
 			.func = filesystem,
 			.mountpoint = "/",
-			.prefix = " ",
+			.prefix = " ",
 			.suffix = "％",
 		},
 	},
