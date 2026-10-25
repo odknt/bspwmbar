@@ -18,7 +18,6 @@
 #endif
 
 #include "bspwmbar.h"
-#include "util.h"
 
 #if defined(__linux)
 typedef struct {
@@ -40,7 +39,7 @@ typedef struct {
 #endif
 
 /* functions */
-static int num_procs();
+static int num_procs(void);
 static int cpu_perc(double **);
 
 static const char *deffgcols[4] = {
@@ -52,7 +51,7 @@ static const char *deffgcols[4] = {
 static double *loadavgs = NULL;
 
 int
-num_procs()
+num_procs(void)
 {
 	static int nproc = 0;
 
@@ -95,11 +94,11 @@ cpu_perc(double **cores)
 	prevtime = curtime;
 
 	if (a == NULL)
-		a = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
+		a = (CoreInfo *)calloc(nproc, sizeof(CoreInfo));
 	if (b == NULL)
-		b = (CoreInfo *)calloc(sizeof(CoreInfo), nproc);
+		b = (CoreInfo *)calloc(nproc, sizeof(CoreInfo));
 	if (loadavgs == NULL)
-		loadavgs = (double *)calloc(sizeof(double), nproc);
+		loadavgs = (double *)calloc(nproc, sizeof(double));
 
 	memcpy(b, a, sizeof(CoreInfo) * nproc);
 

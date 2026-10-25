@@ -7,7 +7,6 @@
 #include <xcb/xcb_event.h>
 
 #include "util.h"
-#include "bspwm.h"
 
 typedef enum {
 	PR_NOOP   =  0,
@@ -35,9 +34,9 @@ typedef void (* module_handler_t)(draw_context_t *, module_option_t *);
 typedef void (* event_handler_t)(xcb_generic_event_t *, module_option_t *);
 
 /* Poll */
-typedef int (* poll_init_handler_t)();
-typedef int (* poll_deinit_handler_t)();
-typedef poll_result_t (* poll_update_handler_t)();
+typedef int (* poll_init_handler_t)(void);
+typedef int (* poll_deinit_handler_t)(void);
+typedef poll_result_t (* poll_update_handler_t)(int);
 typedef struct {
 	int fd;
 	poll_init_handler_t init; /* initialize and return fd */
@@ -165,11 +164,11 @@ union _module_t {
 	module_xbacklight_t xbacklight;
 };
 
-xcb_connection_t *xcb_connection();
+xcb_connection_t *xcb_connection(void);
 
 color_t *color_load(const char *);
-color_t *color_default_fg();
-color_t *color_default_bg();
+color_t *color_default_fg(void);
+color_t *color_default_bg(void);
 
 const char *draw_context_monitor_name(draw_context_t *);
 

@@ -6,11 +6,11 @@ VERSION="${TAG:-0.6.2}"
 PREFIX=/usr/local
 
 PKGCONFIG='pkg-config'
-DEPS='xcb xcb-ewmh xcb-util xcb-randr xcb-shm xcb-renderutil cairo harfbuzz fontconfig'
+DEPS='xcb xcb-ewmh xcb-util xcb-randr xcb-shm xcb-renderutil cairo harfbuzz fontconfig freetype2'
 MODS='bspwm cpu memory disk thermal datetime battery backlight xbacklight'
 
-# debug flags
-CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -DNDEBUG'
+# release flags
+CFLAGS='-Os -Wall -Wextra -pedantic -pipe -fstack-protector-strong -fno-plt -fcommon -DNDEBUG'
 LDFLAGS='-s'
 
 # debug flags

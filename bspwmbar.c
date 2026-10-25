@@ -48,7 +48,6 @@
 
 /* local headers */
 #include "bspwmbar.h"
-#include "bspwm.h"
 #include "systray.h"
 #include "config.h"
 
@@ -229,23 +228,23 @@ static void render_labels(draw_context_t *, label_t *, size_t);
 static void windowtitle_update(xcb_connection_t *, uint8_t);
 static void calculate_systray_item_positions(label_t *, module_option_t *);
 static void calculate_label_positions(draw_context_t *, label_t *, size_t, int);
-static void render();
-static int get_baseline();
+static void render(void);
+static int get_baseline(void);
 static bool bspwmbar_init(xcb_connection_t *, xcb_screen_t *);
-static void bspwmbar_destroy();
-static void poll_init();
-static void poll_loop(void (*)());
-static void poll_stop();
-static poll_result_t xev_handle();
+static void bspwmbar_destroy(void);
+static void poll_init(void);
+static void poll_loop(void (*)(void));
+static void poll_stop(void);
+static poll_result_t xev_handle(int);
 #if defined(__linux)
 static poll_result_t timer_reset(int);
 #endif
 static bool is_change_active_window_event(xcb_property_notify_event_t *);
 static void cleanup(xcb_connection_t *);
-static void run();
+static void run(void);
 
 xcb_connection_t *
-xcb_connection()
+xcb_connection(void)
 {
 	return bar.xcb;
 }
@@ -334,7 +333,7 @@ color_load(const char *colstr)
  * Return: Color
  */
 color_t *
-color_default_fg()
+color_default_fg(void)
 {
 	return bar.fg;
 }
@@ -345,7 +344,7 @@ color_default_fg()
  * Return: Color
  */
 color_t *
-color_default_bg()
+color_default_bg(void)
 {
 	return bar.bg;
 }
@@ -862,7 +861,7 @@ load_fonts(const char *patstr)
  * Return: y offset.
  */
 int
-get_baseline()
+get_baseline(void)
 {
 	return (BAR_HEIGHT - bar.font_size / 2);
 }
@@ -1199,7 +1198,7 @@ calculate_label_positions(draw_context_t *dc, label_t *labels, size_t nlabel, in
  * render() - rendering all modules.
  */
 void
-render()
+render(void)
 {
 	draw_context_t *dc;
 	window_t *xw;
@@ -1309,7 +1308,7 @@ font_destroy(font_t font)
  * font_caches_destroy() - free all resources of font caches.
  */
 void
-font_caches_destroy()
+font_caches_destroy(void)
 {
 	int i;
 	for (i = 0; i < nfcache; i++)
@@ -1324,7 +1323,7 @@ font_caches_destroy()
  * bspwmbar_destroy() - destroy all resources of bspwmbar.
  */
 void
-bspwmbar_destroy()
+bspwmbar_destroy(void)
 {
 	list_head *cur;
 	int i;
@@ -1385,7 +1384,7 @@ systray(draw_context_t *dc, module_option_t *opts)
  * poll_stop() - stop polling to all file descriptor.
  */
 void
-poll_stop()
+poll_stop(void)
 {
 	if (pfd > 0)
 		close(pfd);
@@ -1446,7 +1445,7 @@ poll_del(poll_fd_t *pollfd)
  * The function must be called before poll_add(), poll_del().
  */
 void
-poll_init()
+poll_init(void)
 {
 	list_head_init(&pollfds);
 }
@@ -1517,8 +1516,10 @@ xcb_event_notify(xcb_generic_event_t *event, draw_context_t *dc)
  * PR_UPDATE - success and need rerendering
  */
 poll_result_t
-xev_handle()
+xev_handle(int fd)
 {
+	(void)fd;
+
 	xcb_generic_event_t *event;
 	xcb_button_press_event_t *button;
 	xcb_property_notify_event_t *prop;
@@ -1609,7 +1610,7 @@ epoll_wait_ignore_eintr(int pfd, struct epoll_event *events, int maxevents, int 
  * @handler: rendering function
  */
 void
-poll_loop(void (* handler)())
+poll_loop(void (* handler)(void))
 {
 	int i, nfd, need_render;
 	poll_fd_t *pollfd;
@@ -1716,7 +1717,7 @@ cleanup(xcb_connection_t *xcb)
 }
 
 void
-run()
+run(void)
 {
 	struct sigaction act;
 	xcb_connection_t *xcb;
